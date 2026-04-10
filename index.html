@@ -1,11 +1,576 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello World</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bloomberg Terminal</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      color: #ff8c00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── TOP BAR ── */
+    #topbar {
+      background: #ff8c00;
+      color: #000;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px 8px;
+      font-weight: bold;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    #topbar .logo { font-size: 16px; letter-spacing: 2px; }
+    #topbar .clock { font-size: 13px; }
+
+    /* ── NAV BAR ── */
+    #navbar {
+      background: #1a1a00;
+      border-bottom: 1px solid #ff8c00;
+      display: flex;
+      gap: 2px;
+      padding: 2px 4px;
+      flex-shrink: 0;
+    }
+    #navbar button {
+      background: #000;
+      color: #ff8c00;
+      border: 1px solid #ff8c00;
+      padding: 2px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    #navbar button:hover, #navbar button.active {
+      background: #ff8c00;
+      color: #000;
+    }
+
+    /* ── TICKER TAPE ── */
+    #ticker-wrap {
+      background: #0d0d00;
+      border-bottom: 1px solid #333;
+      overflow: hidden;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    #ticker {
+      display: inline-flex;
+      white-space: nowrap;
+      animation: scroll-left 40s linear infinite;
+    }
+    .tick-item { padding: 2px 20px; font-size: 11px; }
+    .tick-item span.sym { color: #ffdd00; font-weight: bold; }
+    .tick-item span.up  { color: #00ff41; }
+    .tick-item span.dn  { color: #ff3333; }
+    @keyframes scroll-left {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    /* ── MAIN GRID ── */
+    #grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 2px;
+      flex: 1;
+      padding: 2px;
+      overflow: hidden;
+    }
+
+    .panel {
+      background: #050505;
+      border: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-header {
+      background: #1a0f00;
+      border-bottom: 1px solid #ff8c00;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: bold;
+      color: #ffaa00;
+      display: flex;
+      justify-content: space-between;
+    }
+    .panel-body { flex: 1; overflow-y: auto; padding: 4px; }
+    .panel-body::-webkit-scrollbar { width: 4px; }
+    .panel-body::-webkit-scrollbar-track { background: #111; }
+    .panel-body::-webkit-scrollbar-thumb { background: #ff8c00; }
+
+    /* ── MARKET TABLE ── */
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      color: #888;
+      text-align: left;
+      font-size: 10px;
+      border-bottom: 1px solid #222;
+      padding: 2px 4px;
+    }
+    td { padding: 3px 4px; font-size: 11px; border-bottom: 1px solid #111; }
+    tr:hover td { background: #0f0f00; }
+    .up  { color: #00ff41; }
+    .dn  { color: #ff3333; }
+    .neu { color: #888; }
+    .sym-col { color: #ffdd00; font-weight: bold; }
+
+    /* ── CHART ── */
+    canvas { width: 100%; height: 100%; }
+
+    /* ── NEWS ── */
+    .news-item {
+      border-bottom: 1px solid #111;
+      padding: 4px 2px;
+      line-height: 1.5;
+    }
+    .news-item .ts  { color: #666; font-size: 10px; }
+    .news-item .hl  { color: #ffaa00; font-size: 11px; }
+    .news-item .src { color: #ff8c00; font-size: 10px; }
+
+    /* ── COMMAND LINE ── */
+    #cmdbar {
+      background: #000;
+      border-top: 1px solid #ff8c00;
+      display: flex;
+      align-items: center;
+      padding: 3px 8px;
+      flex-shrink: 0;
+    }
+    #cmdbar label { color: #ff8c00; font-weight: bold; margin-right: 8px; }
+    #cmdbar input {
+      background: #000;
+      border: none;
+      color: #ffdd00;
+      font-family: inherit;
+      font-size: 13px;
+      flex: 1;
+      outline: none;
+      caret-color: #ff8c00;
+    }
+    #cmd-out {
+      color: #00ff41;
+      font-size: 11px;
+      margin-left: 12px;
+    }
+
+    /* ── PORTFOLIO PANEL ── */
+    .pnl-pos { color: #00ff41; }
+    .pnl-neg { color: #ff3333; }
+    .gauge {
+      height: 6px;
+      background: #111;
+      border-radius: 3px;
+      margin-top: 2px;
+    }
+    .gauge-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+
+    /* ── RESPONSIVE SPAN ── */
+    #panel-chart  { grid-column: span 2; }
+  </style>
 </head>
 <body>
-    <h1>Hellow World</h1>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <span class="logo">BLOOMBERG PROFESSIONAL</span>
+  <span id="clock-display">--:--:-- EST</span>
+  <span>USER: TRADER01 &nbsp;|&nbsp; SESSION ACTIVE</span>
+</div>
+
+<!-- NAV BAR -->
+<div id="navbar">
+  <button class="active" onclick="setView('market')">MARKET</button>
+  <button onclick="setView('equity')">EQUITY</button>
+  <button onclick="setView('fx')">FX</button>
+  <button onclick="setView('fixed')">FIXED INC</button>
+  <button onclick="setView('news')">NEWS</button>
+  <button onclick="setView('port')">PORTFOLIO</button>
+  <button onclick="setView('crypto')">CRYPTO</button>
+</div>
+
+<!-- TICKER TAPE -->
+<div id="ticker-wrap">
+  <div id="ticker"></div>
+</div>
+
+<!-- GRID -->
+<div id="grid">
+
+  <!-- Panel 1: Equities -->
+  <div class="panel">
+    <div class="panel-header">
+      <span>EQUITY INDICES</span><span id="mkt-time"></span>
+    </div>
+    <div class="panel-body">
+      <table>
+        <thead>
+          <tr><th>INDEX</th><th>LAST</th><th>CHG</th><th>%CHG</th><th>VOL</th></tr>
+        </thead>
+        <tbody id="tbl-indices"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Panel 2: Chart (spans 2 cols) -->
+  <div class="panel" id="panel-chart">
+    <div class="panel-header">
+      <span id="chart-title">SPX — S&amp;P 500 INDEX  |  INTRADAY</span>
+      <span id="chart-price" class="up">--</span>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+
+  <!-- Panel 3: FX -->
+  <div class="panel">
+    <div class="panel-header"><span>FX RATES</span><span>SPOT</span></div>
+    <div class="panel-body">
+      <table>
+        <thead>
+          <tr><th>PAIR</th><th>BID</th><th>ASK</th><th>CHG</th></tr>
+        </thead>
+        <tbody id="tbl-fx"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Panel 4: Commodities -->
+  <div class="panel">
+    <div class="panel-header"><span>COMMODITIES &amp; CRYPTO</span><span>LIVE</span></div>
+    <div class="panel-body">
+      <table>
+        <thead>
+          <tr><th>ASSET</th><th>PRICE</th><th>CHG%</th></tr>
+        </thead>
+        <tbody id="tbl-comm"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Panel 5: News -->
+  <div class="panel">
+    <div class="panel-header"><span>MARKET NEWS</span><span id="news-count">LIVE FEED</span></div>
+    <div class="panel-body" id="news-feed"></div>
+  </div>
+
+</div>
+
+<!-- COMMAND LINE -->
+<div id="cmdbar">
+  <label>CMD&gt;</label>
+  <input id="cmd-input" type="text" placeholder="Type symbol + &lt;GO&gt; e.g.  AAPL&lt;EQUITY&gt;  or  HELP" autocomplete="off" />
+  <span id="cmd-out"></span>
+</div>
+
+<script>
+// ─── DATA SEEDS ──────────────────────────────────────────────────────────────
+const INDICES = [
+  { sym:'SPX',  name:'S&P 500',      base:5320.45 },
+  { sym:'INDU', name:'DOW JONES',    base:39218.54 },
+  { sym:'CCMP', name:'NASDAQ COMP',  base:16547.23 },
+  { sym:'RTY',  name:'RUSSELL 2000', base:2082.11 },
+  { sym:'UKX',  name:'FTSE 100',     base:8124.56 },
+  { sym:'DAX',  name:'DAX 40',       base:17812.34 },
+  { sym:'NKY',  name:'NIKKEI 225',   base:38451.77 },
+  { sym:'HSI',  name:'HANG SENG',    base:17210.89 },
+];
+
+const FX = [
+  { pair:'EUR/USD', base:1.0856 },
+  { pair:'GBP/USD', base:1.2734 },
+  { pair:'USD/JPY', base:151.82 },
+  { pair:'USD/CHF', base:0.9024 },
+  { pair:'AUD/USD', base:0.6534 },
+  { pair:'USD/CAD', base:1.3612 },
+  { pair:'USD/CNY', base:7.2314 },
+  { pair:'EUR/GBP', base:0.8524 },
+];
+
+const COMM = [
+  { name:'CRUDE OIL', base:82.45 },
+  { name:'GOLD',      base:2324.10 },
+  { name:'SILVER',    base:27.34 },
+  { name:'NATURAL GAS',base:1.72 },
+  { name:'WHEAT',     base:521.25 },
+  { name:'BITCOIN',   base:68240.00 },
+  { name:'ETHEREUM',  base:3512.40 },
+  { name:'COPPER',    base:4.58 },
+];
+
+const NEWS_ITEMS = [
+  { ts:'08:32', src:'BBG', hl:'Fed officials signal patience on rate cuts amid sticky inflation data' },
+  { ts:'08:28', src:'BBG', hl:'NVIDIA surges 4% after record data-center revenue beats estimates' },
+  { ts:'08:21', src:'BBG', hl:'Oil climbs as OPEC+ reaffirms production-cut commitment through Q3' },
+  { ts:'08:15', src:'BBG', hl:'China Q1 GDP beats forecasts at 5.3%; Shanghai equities rally' },
+  { ts:'08:09', src:'BBG', hl:'Apple plans iPhone AI overhaul, partners with Anthropic — sources' },
+  { ts:'08:02', src:'BBG', hl:'ECB holds rates, Lagarde hints at June cut if data cooperates' },
+  { ts:'07:54', src:'BBG', hl:'Treasury yields edge higher after stronger-than-expected jobs report' },
+  { ts:'07:48', src:'BBG', hl:'Bitcoin ETF inflows hit $1.2B in single session; BTC tests $70K' },
+  { ts:'07:39', src:'BBG', hl:'Goldman raises S&P 500 year-end target to 5,600 on earnings optimism' },
+  { ts:'07:31', src:'BBG', hl:'Saudi Aramco Q1 profit falls 14% as crude prices moderate' },
+  { ts:'07:22', src:'BBG', hl:'Tesla announces cost-cutting plan; 10% global workforce reduction' },
+  { ts:'07:15', src:'BBG', hl:'BOJ sources: policymakers open to further rate hikes if yen weakens' },
+];
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let state = {
+  indices: INDICES.map(i => ({ ...i, val: i.base, chg: 0, pct: 0, vol: rndVol() })),
+  fx:      FX.map(f      => ({ ...f, val: f.base, chg: 0 })),
+  comm:    COMM.map(c    => ({ ...c, val: c.base, pct: 0 })),
+};
+
+// ─── CHART DATA ──────────────────────────────────────────────────────────────
+const CHART_POINTS = 120;
+let chartData = [];
+let spxBase = 5320;
+for (let i = 0; i < CHART_POINTS; i++) {
+  spxBase += (Math.random() - 0.49) * 8;
+  chartData.push(spxBase);
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function rndVol() { return (Math.random() * 9 + 1).toFixed(2) + 'B'; }
+function jitter(val, pct) { return val * (1 + (Math.random() - 0.5) * pct); }
+function fmt(n, d=2) { return n.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function clsChg(v) { return v > 0 ? 'up' : v < 0 ? 'dn' : 'neu'; }
+function arrow(v) { return v > 0 ? '▲' : v < 0 ? '▼' : '–'; }
+
+// ─── CLOCK ───────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const ts = now.toLocaleTimeString('en-US', { hour12: false,
+    timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  document.getElementById('clock-display').textContent = ts + ' EST';
+  document.getElementById('mkt-time').textContent = ts;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── SIMULATE DATA ───────────────────────────────────────────────────────────
+function simulateTick() {
+  state.indices.forEach(i => {
+    i.val = jitter(i.val, 0.002);
+    i.chg = i.val - i.base;
+    i.pct = (i.chg / i.base) * 100;
+  });
+  state.fx.forEach(f => {
+    f.val = jitter(f.val, 0.0005);
+    f.chg = f.val - f.base;
+  });
+  state.comm.forEach(c => {
+    c.val = jitter(c.val, 0.003);
+    c.pct = ((c.val - c.base) / c.base) * 100;
+  });
+  // extend chart
+  chartData.push(jitter(chartData[chartData.length-1], 0.003));
+  if (chartData.length > CHART_POINTS) chartData.shift();
+}
+
+// ─── RENDER TABLES ───────────────────────────────────────────────────────────
+function renderIndices() {
+  const tb = document.getElementById('tbl-indices');
+  tb.innerHTML = state.indices.map(i => `
+    <tr>
+      <td class="sym-col">${i.sym}</td>
+      <td>${fmt(i.val)}</td>
+      <td class="${clsChg(i.chg)}">${arrow(i.chg)} ${fmt(Math.abs(i.chg))}</td>
+      <td class="${clsChg(i.pct)}">${fmt(i.pct)}%</td>
+      <td class="neu">${i.vol}</td>
+    </tr>`).join('');
+}
+
+function renderFX() {
+  const tb = document.getElementById('tbl-fx');
+  tb.innerHTML = state.fx.map(f => {
+    const spread = f.val * 0.0002;
+    return `
+    <tr>
+      <td class="sym-col">${f.pair}</td>
+      <td>${fmt(f.val, 4)}</td>
+      <td>${fmt(f.val + spread, 4)}</td>
+      <td class="${clsChg(f.chg)}">${arrow(f.chg)} ${fmt(Math.abs(f.chg), 4)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderComm() {
+  const tb = document.getElementById('tbl-comm');
+  tb.innerHTML = state.comm.map(c => `
+    <tr>
+      <td class="sym-col">${c.name}</td>
+      <td>${fmt(c.val, c.val > 100 ? 2 : 4)}</td>
+      <td class="${clsChg(c.pct)}">${arrow(c.pct)} ${fmt(Math.abs(c.pct))}%</td>
+    </tr>`).join('');
+}
+
+function renderNews() {
+  const feed = document.getElementById('news-feed');
+  feed.innerHTML = NEWS_ITEMS.map(n => `
+    <div class="news-item">
+      <span class="ts">${n.ts}</span>
+      <span class="src"> [${n.src}] </span>
+      <span class="hl">${n.hl}</span>
+    </div>`).join('');
+}
+
+// ─── TICKER TAPE ─────────────────────────────────────────────────────────────
+function buildTicker() {
+  const items = [
+    ...state.indices.map(i =>
+      `<span class="sym-col">${i.sym}</span> ${fmt(i.val)} <span class="${clsChg(i.pct)}">${arrow(i.pct)}${fmt(Math.abs(i.pct))}%</span>`),
+    ...state.fx.map(f =>
+      `<span class="sym-col">${f.pair}</span> ${fmt(f.val, 4)} <span class="${clsChg(f.chg)}">${arrow(f.chg)}</span>`),
+    ...state.comm.slice(0,4).map(c =>
+      `<span class="sym-col">${c.name}</span> ${fmt(c.val, 2)} <span class="${clsChg(c.pct)}">${arrow(c.pct)}${fmt(Math.abs(c.pct))}%</span>`),
+  ];
+  const html = items.map(h => `<span class="tick-item">${h} &nbsp;|</span>`).join('');
+  document.getElementById('ticker').innerHTML = html + html; // duplicate for seamless loop
+}
+
+// ─── CHART ───────────────────────────────────────────────────────────────────
+function drawChart() {
+  const canvas = document.getElementById('chart');
+  const parent = canvas.parentElement;
+  canvas.width  = parent.clientWidth;
+  canvas.height = parent.clientHeight;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const pad = { t:10, r:60, b:30, l:10 };
+  const pw = W - pad.l - pad.r;
+  const ph = H - pad.t - pad.b;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // background grid
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = 1;
+  for (let y = 0; y <= 5; y++) {
+    const yy = pad.t + (y / 5) * ph;
+    ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke();
+  }
+
+  const min = Math.min(...chartData);
+  const max = Math.max(...chartData);
+  const range = max - min || 1;
+
+  function xAt(i) { return pad.l + (i / (chartData.length - 1)) * pw; }
+  function yAt(v) { return pad.t + ph - ((v - min) / range) * ph; }
+
+  // area fill
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ph);
+  grad.addColorStop(0, 'rgba(0,255,65,0.25)');
+  grad.addColorStop(1, 'rgba(0,255,65,0)');
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), pad.t + ph);
+  chartData.forEach((v, i) => ctx.lineTo(xAt(i), yAt(v)));
+  ctx.lineTo(xAt(chartData.length - 1), pad.t + ph);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // line
+  ctx.beginPath();
+  ctx.strokeStyle = '#00ff41';
+  ctx.lineWidth = 1.5;
+  chartData.forEach((v, i) => i === 0 ? ctx.moveTo(xAt(i), yAt(v)) : ctx.lineTo(xAt(i), yAt(v)));
+  ctx.stroke();
+
+  // price labels on right axis
+  ctx.fillStyle = '#888';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'left';
+  for (let y = 0; y <= 4; y++) {
+    const val = min + (y / 4) * range;
+    const yy  = yAt(val);
+    ctx.fillText(fmt(val), W - pad.r + 4, yy + 4);
+  }
+
+  // last price callout
+  const last = chartData[chartData.length - 1];
+  const ly = yAt(last);
+  ctx.fillStyle = '#00ff41';
+  ctx.fillRect(W - pad.r + 2, ly - 8, pad.r - 4, 16);
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 10px Courier New';
+  ctx.fillText(fmt(last), W - pad.r + 4, ly + 4);
+
+  // update header price
+  const chg = last - chartData[0];
+  const pct  = (chg / chartData[0]) * 100;
+  const el   = document.getElementById('chart-price');
+  el.textContent = `${fmt(last)} ${arrow(chg)} ${fmt(Math.abs(chg))} (${fmt(Math.abs(pct))}%)`;
+  el.className = clsChg(chg);
+}
+
+// ─── COMMAND LINE ─────────────────────────────────────────────────────────────
+const CMD_HELP = `AVAILABLE COMMANDS: <br>
+HELP — show commands &nbsp;|&nbsp;
+&lt;SYMBOL&gt;&lt;EQUITY&gt; — quote &nbsp;|&nbsp;
+FX — FX panel &nbsp;|&nbsp;
+NEWS — news feed &nbsp;|&nbsp;
+CLEAR — clear output`;
+
+document.getElementById('cmd-input').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const raw = e.target.value.trim().toUpperCase();
+  const out = document.getElementById('cmd-out');
+  e.target.value = '';
+
+  if (!raw) return;
+
+  if (raw === 'HELP') { out.innerHTML = CMD_HELP; return; }
+  if (raw === 'CLEAR') { out.innerHTML = ''; return; }
+  if (raw === 'NEWS') { out.innerHTML = 'NEWS FEED ACTIVE — see panel below right'; return; }
+
+  // equity lookup
+  const idx = state.indices.find(i => raw.includes(i.sym));
+  if (idx) {
+    out.innerHTML = `${idx.sym} &nbsp; LAST: <span class="up">${fmt(idx.val)}</span> &nbsp; CHG: <span class="${clsChg(idx.chg)}">${arrow(idx.chg)} ${fmt(Math.abs(idx.chg))} (${fmt(idx.pct)}%)</span>`;
+    return;
+  }
+  out.innerHTML = `<span style="color:#ff3333">UNKNOWN FUNCTION: ${raw} — type HELP&lt;GO&gt;</span>`;
+});
+
+// ─── VIEW SWITCHER ────────────────────────────────────────────────────────────
+function setView(v) {
+  document.querySelectorAll('#navbar button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('cmd-out').innerHTML =
+    `LOADING ${v.toUpperCase()} VIEW... &nbsp; <span style="color:#888">[DEMO — all panels update live]</span>`;
+}
+
+// ─── MAIN LOOP ────────────────────────────────────────────────────────────────
+function tick() {
+  simulateTick();
+  renderIndices();
+  renderFX();
+  renderComm();
+  drawChart();
+  buildTicker();
+}
+
+renderNews();
+tick();
+setInterval(tick, 1500);
+window.addEventListener('resize', drawChart);
+</script>
 </body>
 </html>

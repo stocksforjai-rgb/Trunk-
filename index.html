@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bloomberg Terminal</title>
+  <title>Stock Terminal</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -29,9 +29,78 @@
       font-weight: bold;
       font-size: 13px;
       flex-shrink: 0;
+      gap: 10px;
+      overflow: visible;
     }
-    #topbar .logo { font-size: 16px; letter-spacing: 2px; }
-    #topbar .clock { font-size: 13px; }
+    #topbar .logo { font-size: 16px; letter-spacing: 2px; white-space: nowrap; }
+    #mkt-status { display: flex; gap: 14px; font-size: 11px; }
+
+    /* ── SEARCH BAR ── */
+    #search-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    #search-input {
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(0,0,0,0.45);
+      border-radius: 2px;
+      color: #000;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 11px;
+      font-weight: bold;
+      padding: 2px 24px 2px 8px;
+      width: 185px;
+      outline: none;
+      caret-color: #000;
+    }
+    #search-input::placeholder { color: rgba(0,0,0,0.5); }
+    #search-input:focus { background: rgba(0,0,0,0.35); border-color: rgba(0,0,0,0.7); }
+    #search-clear {
+      position: absolute;
+      right: 5px;
+      background: transparent;
+      border: none;
+      color: rgba(0,0,0,0.6);
+      font-size: 13px;
+      cursor: pointer;
+      line-height: 1;
+      display: none;
+    }
+    #search-clear:hover { color: #000; }
+    #search-dropdown {
+      position: absolute;
+      top: calc(100% + 3px);
+      left: 0;
+      width: 330px;
+      background: #0a0a00;
+      border: 1px solid #ff8c00;
+      z-index: 9999;
+      max-height: 260px;
+      overflow-y: auto;
+      display: none;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.9);
+    }
+    #search-dropdown::-webkit-scrollbar { width: 4px; }
+    #search-dropdown::-webkit-scrollbar-track { background: #111; }
+    #search-dropdown::-webkit-scrollbar-thumb { background: #ff8c00; }
+    .sr-item {
+      padding: 6px 8px;
+      cursor: pointer;
+      border-bottom: 1px solid #1a1a00;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sr-item:hover { background: #1a1a00; }
+    .sr-item .sr-top { display: flex; justify-content: space-between; align-items: center; }
+    .sr-item .sr-sym  { color: #ffdd00; font-weight: bold; font-size: 12px; }
+    .sr-item .sr-add  { color: #00ff41; font-size: 10px; }
+    .sr-item .sr-chk  { color: #888; font-size: 10px; }
+    .sr-item .sr-desc { color: #ff8c00; font-size: 10px; }
+    .sr-item .sr-exch { color: #555; font-size: 10px; }
+    .sr-searching { padding: 8px; color: #555; font-size: 11px; text-align: center; }
 
     /* ── NAV BAR ── */
     #navbar {
@@ -68,21 +137,18 @@
     #ticker {
       display: inline-flex;
       white-space: nowrap;
-      animation: scroll-left 40s linear infinite;
+      animation: scroll-left 60s linear infinite;
     }
     .tick-item { padding: 2px 20px; font-size: 11px; }
-    .tick-item span.sym { color: #ffdd00; font-weight: bold; }
-    .tick-item span.up  { color: #00ff41; }
-    .tick-item span.dn  { color: #ff3333; }
     @keyframes scroll-left {
       0%   { transform: translateX(0); }
       100% { transform: translateX(-50%); }
     }
 
-    /* ── MAIN GRID ── */
+    /* ── MAIN GRID (4 cols) ── */
     #grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
       grid-template-rows: 1fr 1fr;
       gap: 2px;
       flex: 1;
@@ -106,40 +172,129 @@
       color: #ffaa00;
       display: flex;
       justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
     }
-    .panel-body { flex: 1; overflow-y: auto; padding: 4px; }
+    .panel-body { flex: 1; overflow-y: auto; padding: 4px; min-height: 0; }
     .panel-body::-webkit-scrollbar { width: 4px; }
     .panel-body::-webkit-scrollbar-track { background: #111; }
     .panel-body::-webkit-scrollbar-thumb { background: #ff8c00; }
 
-    /* ── MARKET TABLE ── */
+    /* ── TABLE ── */
     table { width: 100%; border-collapse: collapse; }
     th {
-      color: #888;
+      color: #666;
       text-align: left;
       font-size: 10px;
-      border-bottom: 1px solid #222;
+      border-bottom: 1px solid #1a1a00;
       padding: 2px 4px;
+      position: sticky;
+      top: 0;
+      background: #050505;
+      z-index: 1;
     }
-    td { padding: 3px 4px; font-size: 11px; border-bottom: 1px solid #111; }
+    td { padding: 3px 4px; font-size: 11px; border-bottom: 1px solid #0a0a0a; }
     tr:hover td { background: #0f0f00; }
     .up  { color: #00ff41; }
     .dn  { color: #ff3333; }
     .neu { color: #888; }
     .sym-col { color: #ffdd00; font-weight: bold; }
 
-    /* ── CHART ── */
-    canvas { width: 100%; height: 100%; }
-
-    /* ── NEWS ── */
-    .news-item {
-      border-bottom: 1px solid #111;
-      padding: 4px 2px;
-      line-height: 1.5;
+    /* ── SCREENER ── */
+    #btn-add-stock {
+      background: transparent;
+      border: 1px solid rgba(255,140,0,0.6);
+      color: #ff8c00;
+      font-family: inherit;
+      font-size: 10px;
+      padding: 1px 6px;
+      cursor: pointer;
     }
-    .news-item .ts  { color: #666; font-size: 10px; }
-    .news-item .hl  { color: #ffaa00; font-size: 11px; }
-    .news-item .src { color: #ff8c00; font-size: 10px; }
+    #btn-add-stock:hover { background: #ff8c00; color: #000; }
+    .screener-remove {
+      background: transparent;
+      border: none;
+      color: #ff3333;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0 2px;
+      line-height: 1;
+      font-family: inherit;
+      opacity: 0.6;
+    }
+    .screener-remove:hover { opacity: 1; }
+
+    /* ── CHART ── */
+    #panel-chart { grid-column: span 3; }
+    #panel-chart .panel-body {
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    #chart {
+      display: block;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+    }
+    #chart-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #333;
+      font-size: 13px;
+      pointer-events: none;
+      text-align: center;
+      padding: 8px;
+    }
+    #chart-canvas-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* ── TIME RANGE BAR ── */
+    #chart-timerange {
+      display: flex;
+      gap: 2px;
+      padding: 3px 6px;
+      background: #0a0a00;
+      border-top: 1px solid #1a1a00;
+      flex-shrink: 0;
+    }
+    .tr-btn {
+      background: #000;
+      border: 1px solid #1a1a00;
+      color: #444;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 2px 9px;
+      cursor: pointer;
+    }
+    .tr-btn:hover  { border-color: #ff8c00; color: #ff8c00; }
+    .tr-btn.active { background: #ff8c00; color: #000; border-color: #ff8c00; }
+
+    /* ── NEWS & ANNOUNCEMENTS ── */
+    .news-item, .ann-item {
+      border-bottom: 1px solid #0d0d00;
+      padding: 5px 2px;
+      line-height: 1.5;
+      cursor: pointer;
+    }
+    .news-item:hover, .ann-item:hover { background: #0a0a00; }
+    .news-item .ts,  .ann-item .ann-ts  { color: #444; font-size: 10px; }
+    .news-item .src, .ann-item .ann-co  { color: #ff8c00; font-size: 10px; font-weight: bold; }
+    .news-item .hl  { color: #ffaa00; font-size: 11px; display: block; margin-top: 2px; }
+    .ann-item .ann-hl { color: #ffcc66; font-size: 11px; display: block; margin-top: 2px; }
+
+    /* ── STATUS DOTS ── */
+    .dot-open  { color: #00ff41; }
+    .dot-close { color: #ff3333; }
+
+    /* ── LOADING ── */
+    .loading { color: #333; font-style: italic; padding: 8px 4px; font-size: 11px; }
 
     /* ── COMMAND LINE ── */
     #cmdbar {
@@ -150,7 +305,7 @@
       padding: 3px 8px;
       flex-shrink: 0;
     }
-    #cmdbar label { color: #ff8c00; font-weight: bold; margin-right: 8px; }
+    #cmdbar label { color: #ff8c00; font-weight: bold; margin-right: 8px; white-space: nowrap; }
     #cmdbar input {
       background: #000;
       border: none;
@@ -165,110 +320,139 @@
       color: #00ff41;
       font-size: 11px;
       margin-left: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 55%;
     }
-
-    /* ── PORTFOLIO PANEL ── */
-    .pnl-pos { color: #00ff41; }
-    .pnl-neg { color: #ff3333; }
-    .gauge {
-      height: 6px;
-      background: #111;
-      border-radius: 3px;
-      margin-top: 2px;
-    }
-    .gauge-fill {
-      height: 100%;
-      border-radius: 3px;
-    }
-
-    /* ── RESPONSIVE SPAN ── */
-    #panel-chart  { grid-column: span 2; }
   </style>
 </head>
 <body>
 
 <!-- TOP BAR -->
 <div id="topbar">
-  <span class="logo">BLOOMBERG PROFESSIONAL</span>
-  <span id="clock-display">--:--:-- EST</span>
-  <span>USER: TRADER01 &nbsp;|&nbsp; SESSION ACTIVE</span>
+  <span class="logo">STOCK TERMINAL</span>
+  <div id="mkt-status">
+    <span id="nse-status">NSE <span class="dot-close">●</span></span>
+    <span id="bse-status">BSE <span class="dot-close">●</span></span>
+    <span id="nyse-status">NYSE <span class="dot-close">●</span></span>
+  </div>
+
+  <!-- SEARCH -->
+  <div id="search-wrap">
+    <input id="search-input" type="text" placeholder="🔍 Search symbol or company..." autocomplete="off" spellcheck="false" />
+    <button id="search-clear" title="Clear">✕</button>
+    <div id="search-dropdown"></div>
+  </div>
+
+  <span id="clock-display" style="white-space:nowrap">--:--:-- IST</span>
 </div>
 
 <!-- NAV BAR -->
 <div id="navbar">
-  <button class="active" onclick="setView('market')">MARKET</button>
-  <button onclick="setView('equity')">EQUITY</button>
-  <button onclick="setView('fx')">FX</button>
-  <button onclick="setView('fixed')">FIXED INC</button>
-  <button onclick="setView('news')">NEWS</button>
-  <button onclick="setView('port')">PORTFOLIO</button>
-  <button onclick="setView('crypto')">CRYPTO</button>
+  <button class="active" onclick="setView('market',this)">MARKET</button>
+  <button onclick="setView('screener',this)">SCREENER</button>
+  <button onclick="setView('global',this)">GLOBAL</button>
+  <button onclick="setView('fx',this)">FX / INR</button>
+  <button onclick="setView('news',this)">NEWS</button>
+  <button onclick="setView('announcements',this)">ANNOUNCEMENTS</button>
 </div>
 
 <!-- TICKER TAPE -->
 <div id="ticker-wrap">
-  <div id="ticker"></div>
+  <div id="ticker"><span class="tick-item neu">Connecting to market data feeds...</span></div>
 </div>
 
 <!-- GRID -->
 <div id="grid">
 
-  <!-- Panel 1: Equities -->
+  <!-- Panel 1: STOCK SCREENER (col 1, row 1) -->
   <div class="panel">
     <div class="panel-header">
-      <span>EQUITY INDICES</span><span id="mkt-time"></span>
+      <span>STOCK SCREENER</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span id="screener-refresh" class="neu" style="font-size:10px">--</span>
+        <button id="btn-add-stock" onclick="focusSearch()" title="Search and add a stock">＋ ADD</button>
+      </div>
     </div>
     <div class="panel-body">
       <table>
-        <thead>
-          <tr><th>INDEX</th><th>LAST</th><th>CHG</th><th>%CHG</th><th>VOL</th></tr>
-        </thead>
-        <tbody id="tbl-indices"></tbody>
+        <thead><tr><th>SYMBOL</th><th>PRICE</th><th>CHG</th><th>%CHG</th><th></th></tr></thead>
+        <tbody id="tbl-screener"><tr><td colspan="5" class="loading">Loading screener...</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- Panel 2: Chart (spans 2 cols) -->
+  <!-- Panel 2: Chart (spans 3 cols, row 1) -->
   <div class="panel" id="panel-chart">
     <div class="panel-header">
-      <span id="chart-title">SPX — S&amp;P 500 INDEX  |  INTRADAY</span>
-      <span id="chart-price" class="up">--</span>
+      <span id="chart-title">INFY — INFOSYS  |  1D</span>
+      <span id="chart-price" class="neu">Loading...</span>
     </div>
-    <div class="panel-body" style="padding:0">
-      <canvas id="chart"></canvas>
+    <div class="panel-body">
+      <div id="chart-canvas-wrap">
+        <canvas id="chart"></canvas>
+        <div id="chart-overlay">Loading chart...</div>
+      </div>
+      <div id="chart-timerange">
+        <button class="tr-btn active" onclick="setTimeRange('5min',50,'1D',this)">1D</button>
+        <button class="tr-btn" onclick="setTimeRange('1h',120,'1W',this)">1W</button>
+        <button class="tr-btn" onclick="setTimeRange('1day',180,'6M',this)">6M</button>
+        <button class="tr-btn" onclick="setTimeRange('1day',365,'1Y',this)">1Y</button>
+        <button class="tr-btn" onclick="setTimeRange('1week',312,'6Y',this)">6Y</button>
+        <button class="tr-btn" onclick="setTimeRange('1month',2000,'ALL',this)">ALL</button>
+      </div>
     </div>
   </div>
 
-  <!-- Panel 3: FX -->
+  <!-- Panel 3: Global Markets (col 1, row 2) -->
   <div class="panel">
-    <div class="panel-header"><span>FX RATES</span><span>SPOT</span></div>
+    <div class="panel-header">
+      <span>GLOBAL MARKETS</span>
+      <span class="neu" style="font-size:10px">NYSE · NASDAQ</span>
+    </div>
     <div class="panel-body">
       <table>
-        <thead>
-          <tr><th>PAIR</th><th>BID</th><th>ASK</th><th>CHG</th></tr>
-        </thead>
-        <tbody id="tbl-fx"></tbody>
+        <thead><tr><th>SYMBOL</th><th>PRICE ($)</th><th>CHG</th><th>%CHG</th></tr></thead>
+        <tbody id="tbl-global"><tr><td colspan="4" class="loading">Fetching...</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- Panel 4: Commodities -->
+  <!-- Panel 4: FX Rates (col 2, row 2) -->
   <div class="panel">
-    <div class="panel-header"><span>COMMODITIES &amp; CRYPTO</span><span>LIVE</span></div>
+    <div class="panel-header">
+      <span>FX RATES  ·  USD BASE</span>
+      <span class="neu" style="font-size:10px">SPOT</span>
+    </div>
     <div class="panel-body">
       <table>
-        <thead>
-          <tr><th>ASSET</th><th>PRICE</th><th>CHG%</th></tr>
-        </thead>
-        <tbody id="tbl-comm"></tbody>
+        <thead><tr><th>PAIR</th><th>RATE</th><th>SESSION CHG</th></tr></thead>
+        <tbody id="tbl-fx"><tr><td colspan="3" class="loading">Fetching...</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- Panel 5: News -->
+  <!-- Panel 5: Market News (col 3, row 2) -->
   <div class="panel">
-    <div class="panel-header"><span>MARKET NEWS</span><span id="news-count">LIVE FEED</span></div>
-    <div class="panel-body" id="news-feed"></div>
+    <div class="panel-header">
+      <span>MARKET NEWS</span>
+      <span id="news-badge" class="neu" style="font-size:10px">LOADING...</span>
+    </div>
+    <div class="panel-body" id="news-feed">
+      <div class="loading">Fetching news...</div>
+    </div>
+  </div>
+
+  <!-- Panel 6: Corporate Announcements (col 4, row 2) -->
+  <div class="panel">
+    <div class="panel-header">
+      <span>CORP. ANNOUNCEMENTS</span>
+      <span id="ann-badge" class="neu" style="font-size:10px">--</span>
+    </div>
+    <div class="panel-body" id="ann-feed">
+      <div class="loading">Add stocks to screener...</div>
+    </div>
   </div>
 
 </div>
@@ -276,301 +460,863 @@
 <!-- COMMAND LINE -->
 <div id="cmdbar">
   <label>CMD&gt;</label>
-  <input id="cmd-input" type="text" placeholder="Type symbol + &lt;GO&gt; e.g.  AAPL&lt;EQUITY&gt;  or  HELP" autocomplete="off" />
+  <input id="cmd-input" type="text"
+    placeholder="e.g. INFY:NSE · TCS:NSE · AAPL · MSFT — or type HELP"
+    autocomplete="off" spellcheck="false" />
   <span id="cmd-out"></span>
 </div>
 
 <script>
-// ─── DATA SEEDS ──────────────────────────────────────────────────────────────
-const INDICES = [
-  { sym:'SPX',  name:'S&P 500',      base:5320.45 },
-  { sym:'INDU', name:'DOW JONES',    base:39218.54 },
-  { sym:'CCMP', name:'NASDAQ COMP',  base:16547.23 },
-  { sym:'RTY',  name:'RUSSELL 2000', base:2082.11 },
-  { sym:'UKX',  name:'FTSE 100',     base:8124.56 },
-  { sym:'DAX',  name:'DAX 40',       base:17812.34 },
-  { sym:'NKY',  name:'NIKKEI 225',   base:38451.77 },
-  { sym:'HSI',  name:'HANG SENG',    base:17210.89 },
-];
-
-const FX = [
-  { pair:'EUR/USD', base:1.0856 },
-  { pair:'GBP/USD', base:1.2734 },
-  { pair:'USD/JPY', base:151.82 },
-  { pair:'USD/CHF', base:0.9024 },
-  { pair:'AUD/USD', base:0.6534 },
-  { pair:'USD/CAD', base:1.3612 },
-  { pair:'USD/CNY', base:7.2314 },
-  { pair:'EUR/GBP', base:0.8524 },
-];
-
-const COMM = [
-  { name:'CRUDE OIL', base:82.45 },
-  { name:'GOLD',      base:2324.10 },
-  { name:'SILVER',    base:27.34 },
-  { name:'NATURAL GAS',base:1.72 },
-  { name:'WHEAT',     base:521.25 },
-  { name:'BITCOIN',   base:68240.00 },
-  { name:'ETHEREUM',  base:3512.40 },
-  { name:'COPPER',    base:4.58 },
-];
-
-const NEWS_ITEMS = [
-  { ts:'08:32', src:'BBG', hl:'Fed officials signal patience on rate cuts amid sticky inflation data' },
-  { ts:'08:28', src:'BBG', hl:'NVIDIA surges 4% after record data-center revenue beats estimates' },
-  { ts:'08:21', src:'BBG', hl:'Oil climbs as OPEC+ reaffirms production-cut commitment through Q3' },
-  { ts:'08:15', src:'BBG', hl:'China Q1 GDP beats forecasts at 5.3%; Shanghai equities rally' },
-  { ts:'08:09', src:'BBG', hl:'Apple plans iPhone AI overhaul, partners with Anthropic — sources' },
-  { ts:'08:02', src:'BBG', hl:'ECB holds rates, Lagarde hints at June cut if data cooperates' },
-  { ts:'07:54', src:'BBG', hl:'Treasury yields edge higher after stronger-than-expected jobs report' },
-  { ts:'07:48', src:'BBG', hl:'Bitcoin ETF inflows hit $1.2B in single session; BTC tests $70K' },
-  { ts:'07:39', src:'BBG', hl:'Goldman raises S&P 500 year-end target to 5,600 on earnings optimism' },
-  { ts:'07:31', src:'BBG', hl:'Saudi Aramco Q1 profit falls 14% as crude prices moderate' },
-  { ts:'07:22', src:'BBG', hl:'Tesla announces cost-cutting plan; 10% global workforce reduction' },
-  { ts:'07:15', src:'BBG', hl:'BOJ sources: policymakers open to further rate hikes if yen weakens' },
-];
-
-// ─── STATE ───────────────────────────────────────────────────────────────────
-let state = {
-  indices: INDICES.map(i => ({ ...i, val: i.base, chg: 0, pct: 0, vol: rndVol() })),
-  fx:      FX.map(f      => ({ ...f, val: f.base, chg: 0 })),
-  comm:    COMM.map(c    => ({ ...c, val: c.base, pct: 0 })),
+// ── API KEYS ──────────────────────────────────────────────────────────────────
+const KEYS = {
+  TWELVE:  '711fcb89cfb14fc8975dabb81b91496d',
+  RSS:     'ih56ukjzcpflcpolpnbl5b2xgeb7fxvokg9oisaf',
+  FINNHUB: 'd7cvc5pr01qv03etq8hgd7cvc5pr01qv03etq8i0',
+  NEWS:    '1d14b781f48f4093b8d6e6ca92d092c5'
 };
 
-// ─── CHART DATA ──────────────────────────────────────────────────────────────
-const CHART_POINTS = 120;
-let chartData = [];
-let spxBase = 5320;
-for (let i = 0; i < CHART_POINTS; i++) {
-  spxBase += (Math.random() - 0.49) * 8;
-  chartData.push(spxBase);
+// ── DEFAULT SCREENER ──────────────────────────────────────────────────────────
+const DEFAULT_SCREENER = [
+  { sym: 'RELIANCE:NSE', label: 'RELIANCE'  },
+  { sym: 'TCS:NSE',      label: 'TCS'       },
+  { sym: 'INFY:NSE',     label: 'INFY'      },
+  { sym: 'HDFCBANK:NSE', label: 'HDFCBANK'  },
+  { sym: 'ICICIBANK:NSE',label: 'ICICIBANK' },
+  { sym: 'WIPRO:NSE',    label: 'WIPRO'     },
+  { sym: 'ADANIENT:NSE', label: 'ADANIENT'  },
+  { sym: 'BAJFINANCE:NSE',label:'BAJFINANCE'},
+];
+
+const GLOBAL_STOCKS = [
+  { sym: 'AAPL',  label: 'APPLE'  },
+  { sym: 'MSFT',  label: 'MSFT'   },
+  { sym: 'NVDA',  label: 'NVIDIA' },
+  { sym: 'TSLA',  label: 'TESLA'  },
+  { sym: 'AMZN',  label: 'AMAZON' },
+  { sym: 'GOOGL', label: 'GOOGLE' },
+  { sym: 'META',  label: 'META'   },
+];
+
+const FX_CURRENCIES = [
+  { cur: 'INR', d: 2 }, { cur: 'EUR', d: 4 },
+  { cur: 'GBP', d: 4 }, { cur: 'JPY', d: 2 },
+  { cur: 'AUD', d: 4 }, { cur: 'SGD', d: 4 },
+  { cur: 'CNY', d: 4 }, { cur: 'CHF', d: 4 },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+const state = {
+  screener:       [],
+  global:         [],
+  fxBase:         null,
+  fxCurr:         null,
+  news:           [],
+  announcements:  [],
+  chart:          [],   // [{open,high,low,close,datetime}]
+  chartSym:       'INFY:NSE',
+  chartName:      'INFOSYS LTD',
+  chartInterval:  { interval: '5min', outputsize: 50, label: '1D' },
+};
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function fmt(n, d = 2) {
+  if (n == null || isNaN(n)) return '--';
+  return parseFloat(n).toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+function clsChg(v) { return +v > 0 ? 'up' : +v < 0 ? 'dn' : 'neu'; }
+function arrow(v)   { return +v > 0 ? '▲' : +v < 0 ? '▼' : '–'; }
+function istTime()  {
+  return new Date().toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata', hour12: false, hour: '2-digit', minute: '2-digit'
+  });
+}
+function fmtISTTime(isoStr) {
+  if (!isoStr) return '--';
+  return new Date(isoStr).toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata', hour12: false, hour: '2-digit', minute: '2-digit'
+  });
+}
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function cmdOut(html) {
+  document.getElementById('cmd-out').innerHTML = html;
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-function rndVol() { return (Math.random() * 9 + 1).toFixed(2) + 'B'; }
-function jitter(val, pct) { return val * (1 + (Math.random() - 0.5) * pct); }
-function fmt(n, d=2) { return n.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
-function clsChg(v) { return v > 0 ? 'up' : v < 0 ? 'dn' : 'neu'; }
-function arrow(v) { return v > 0 ? '▲' : v < 0 ? '▼' : '–'; }
+// ── LOCALSTORAGE ──────────────────────────────────────────────────────────────
+function loadScreenerFromStorage() {
+  try {
+    const raw = localStorage.getItem('screener_symbols');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return DEFAULT_SCREENER.map(s => ({ ...s }));
+}
+function saveScreenerToStorage() {
+  try {
+    localStorage.setItem('screener_symbols',
+      JSON.stringify(state.screener.map(s => ({ sym: s.sym, label: s.label }))));
+  } catch (e) {}
+}
 
-// ─── CLOCK ───────────────────────────────────────────────────────────────────
+// ── CLOCK & MARKET STATUS ─────────────────────────────────────────────────────
 function updateClock() {
   const now = new Date();
-  const ts = now.toLocaleTimeString('en-US', { hour12: false,
-    timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', second:'2-digit' });
-  document.getElementById('clock-display').textContent = ts + ' EST';
-  document.getElementById('mkt-time').textContent = ts;
+  const ist = now.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata', hour12: false,
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  document.getElementById('clock-display').textContent = ist + ' IST';
+
+  const istDate  = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const ih = istDate.getHours(), im = istDate.getMinutes();
+  const istMins  = ih * 60 + im;
+  const weekdayI = [1,2,3,4,5].includes(istDate.getDay());
+  const nseOpen  = weekdayI && istMins >= 9*60+15 && istMins < 15*60+30;
+
+  const nseEl  = document.getElementById('nse-status');
+  const bseEl  = document.getElementById('bse-status');
+  nseEl.innerHTML = `NSE <span class="${nseOpen?'dot-open':'dot-close'}">●${nseOpen?'OPEN':'CLOSED'}</span>`;
+  bseEl.innerHTML = `BSE <span class="${nseOpen?'dot-open':'dot-close'}">●${nseOpen?'OPEN':'CLOSED'}</span>`;
+
+  const utcMins  = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const weekdayU = [1,2,3,4,5].includes(now.getUTCDay());
+  const nyseOpen = weekdayU && utcMins >= 13*60+30 && utcMins < 20*60;
+  document.getElementById('nyse-status').innerHTML =
+    `NYSE <span class="${nyseOpen?'dot-open':'dot-close'}">●${nyseOpen?'OPEN':'CLOSED'}</span>`;
 }
 setInterval(updateClock, 1000);
 updateClock();
 
-// ─── SIMULATE DATA ───────────────────────────────────────────────────────────
-function simulateTick() {
-  state.indices.forEach(i => {
-    i.val = jitter(i.val, 0.002);
-    i.chg = i.val - i.base;
-    i.pct = (i.chg / i.base) * 100;
+// ── SCREENER: FETCH ───────────────────────────────────────────────────────────
+async function fetchScreenerQuotes() {
+  if (!state.screener.length) return;
+
+  const nseSym   = state.screener.filter(s => isNSE(s.sym));
+  const otherSym = state.screener.filter(s => !isNSE(s.sym));
+
+  // Twelve Data batch for NSE
+  let nseData = {};
+  if (nseSym.length) {
+    try {
+      const symsStr = nseSym.map(s => s.sym).join(',');
+      const res = await fetch(
+        `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symsStr)}&apikey=${KEYS.TWELVE}`
+      );
+      const raw = await res.json();
+      if (nseSym.length === 1) {
+        // Single symbol: response is the object directly
+        nseData[nseSym[0].sym] = raw;
+      } else {
+        nseData = raw;
+      }
+    } catch (e) { console.warn('Twelve Data screener:', e.message); }
+  }
+
+  // Finnhub for non-NSE
+  const finnData = {};
+  if (otherSym.length) {
+    await Promise.all(otherSym.map(s =>
+      fetch(`https://finnhub.io/api/v1/quote?symbol=${s.sym}&token=${KEYS.FINNHUB}`)
+        .then(r => r.json())
+        .then(d => { finnData[s.sym] = d; })
+        .catch(() => {})
+    ));
+  }
+
+  state.screener = state.screener.map(s => {
+    if (isNSE(s.sym)) {
+      const d = nseData[s.sym];
+      if (!d || d.status === 'error' || !d.close) return { ...s, error: true };
+      return { ...s, price: parseFloat(d.close), change: parseFloat(d.change), pct: parseFloat(d.percent_change), error: false, isNSE: true };
+    } else {
+      const d = finnData[s.sym];
+      if (!d || !(d.c > 0)) return { ...s, error: true };
+      return { ...s, price: d.c, change: d.d, pct: d.dp, error: false, isNSE: false };
+    }
   });
-  state.fx.forEach(f => {
-    f.val = jitter(f.val, 0.0005);
-    f.chg = f.val - f.base;
-  });
-  state.comm.forEach(c => {
-    c.val = jitter(c.val, 0.003);
-    c.pct = ((c.val - c.base) / c.base) * 100;
-  });
-  // extend chart
-  chartData.push(jitter(chartData[chartData.length-1], 0.003));
-  if (chartData.length > CHART_POINTS) chartData.shift();
+
+  renderScreener();
+  buildTicker();
+  document.getElementById('screener-refresh').textContent = 'UPD ' + istTime();
 }
 
-// ─── RENDER TABLES ───────────────────────────────────────────────────────────
-function renderIndices() {
-  const tb = document.getElementById('tbl-indices');
-  tb.innerHTML = state.indices.map(i => `
-    <tr>
-      <td class="sym-col">${i.sym}</td>
-      <td>${fmt(i.val)}</td>
-      <td class="${clsChg(i.chg)}">${arrow(i.chg)} ${fmt(Math.abs(i.chg))}</td>
-      <td class="${clsChg(i.pct)}">${fmt(i.pct)}%</td>
-      <td class="neu">${i.vol}</td>
-    </tr>`).join('');
-}
+function isNSE(sym) { return sym.includes(':NSE') || sym.includes(':BSE'); }
 
-function renderFX() {
-  const tb = document.getElementById('tbl-fx');
-  tb.innerHTML = state.fx.map(f => {
-    const spread = f.val * 0.0002;
-    return `
-    <tr>
-      <td class="sym-col">${f.pair}</td>
-      <td>${fmt(f.val, 4)}</td>
-      <td>${fmt(f.val + spread, 4)}</td>
-      <td class="${clsChg(f.chg)}">${arrow(f.chg)} ${fmt(Math.abs(f.chg), 4)}</td>
+// ── SCREENER: RENDER ──────────────────────────────────────────────────────────
+function renderScreener() {
+  const tb = document.getElementById('tbl-screener');
+  if (!state.screener.length) {
+    tb.innerHTML = `<tr><td colspan="5" class="neu" style="padding:8px 4px">No stocks. Click ＋ ADD or search above.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = state.screener.map((s, idx) => {
+    const cur   = s.isNSE !== false ? '₹' : '$';
+    const pStr  = s.error ? '--' : `${cur}${fmt(s.price)}`;
+    const cStr  = s.error ? '--' : `${arrow(s.change)} ${fmt(Math.abs(s.change))}`;
+    const pctStr= s.error ? '--' : `${arrow(s.pct)}${fmt(Math.abs(s.pct))}%`;
+    return `<tr style="cursor:pointer" title="Click to load chart"
+        onclick="loadChartFromScreener('${escHtml(s.sym)}','${escHtml(s.label)}')">
+      <td class="sym-col">${s.label}</td>
+      <td>${pStr}</td>
+      <td class="${s.error?'neu':clsChg(s.change)}">${cStr}</td>
+      <td class="${s.error?'neu':clsChg(s.pct)}">${pctStr}</td>
+      <td><button class="screener-remove" title="Remove"
+          onclick="event.stopPropagation();removeScreenerStock(${idx})">✕</button></td>
     </tr>`;
   }).join('');
 }
 
-function renderComm() {
-  const tb = document.getElementById('tbl-comm');
-  tb.innerHTML = state.comm.map(c => `
-    <tr>
-      <td class="sym-col">${c.name}</td>
-      <td>${fmt(c.val, c.val > 100 ? 2 : 4)}</td>
-      <td class="${clsChg(c.pct)}">${arrow(c.pct)} ${fmt(Math.abs(c.pct))}%</td>
-    </tr>`).join('');
+// ── SCREENER: ADD / REMOVE ────────────────────────────────────────────────────
+function addToScreener(sym, label) {
+  if (state.screener.some(s => s.sym === sym)) {
+    cmdOut(`<span class="neu">${escHtml(label)} already in screener</span>`);
+    return false;
+  }
+  state.screener.push({ sym, label, error: false, isNSE: isNSE(sym) });
+  saveScreenerToStorage();
+  fetchScreenerQuotes();
+  fetchNews();
+  fetchAnnouncements();
+  return true;
+}
+
+function removeScreenerStock(idx) {
+  state.screener.splice(idx, 1);
+  saveScreenerToStorage();
+  renderScreener();
+  buildTicker();
+  fetchNews();
+  fetchAnnouncements();
+}
+
+function loadChartFromScreener(sym, label) {
+  fetchChartData(sym, label);
+  cmdOut(`Loading chart: <span style="color:#ffdd00">${escHtml(sym)}</span>`);
+}
+
+// ── SYMBOL NORMALISATION ──────────────────────────────────────────────────────
+function normalizeSymbol(finnhubSym, description) {
+  let sym   = finnhubSym;
+  let label = finnhubSym;
+  if (finnhubSym.endsWith('.NS')) {
+    sym   = finnhubSym.slice(0, -3) + ':NSE';
+    label = finnhubSym.slice(0, -3);
+  } else if (finnhubSym.endsWith('.BO')) {
+    sym   = finnhubSym.slice(0, -3) + ':BSE';
+    label = finnhubSym.slice(0, -3);
+  } else {
+    // Use first 3 words of description as label
+    label = (description || finnhubSym).split(' ').slice(0, 3).join(' ').toUpperCase().slice(0, 12);
+  }
+  return { sym, label };
+}
+
+// ── SEARCH BAR ────────────────────────────────────────────────────────────────
+let searchTimer = null;
+const searchInput = document.getElementById('search-input');
+const searchDropdown = document.getElementById('search-dropdown');
+const searchClear = document.getElementById('search-clear');
+
+searchInput.addEventListener('input', function () {
+  const q = this.value.trim();
+  searchClear.style.display = q ? 'block' : 'none';
+  clearTimeout(searchTimer);
+  if (q.length < 2) { hideDropdown(); return; }
+  searchDropdown.style.display = 'block';
+  searchDropdown.innerHTML = `<div class="sr-searching">Searching "${escHtml(q)}"...</div>`;
+  searchTimer = setTimeout(() => doSymbolSearch(q), 400);
+});
+
+searchInput.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { clearSearch(); }
+});
+
+searchClear.addEventListener('click', clearSearch);
+
+document.addEventListener('click', function (e) {
+  if (!document.getElementById('search-wrap').contains(e.target)) hideDropdown();
+});
+
+function clearSearch() {
+  searchInput.value = '';
+  searchClear.style.display = 'none';
+  hideDropdown();
+}
+
+function hideDropdown() {
+  searchDropdown.style.display = 'none';
+}
+
+function focusSearch() {
+  searchInput.focus();
+  searchInput.select();
+}
+
+async function doSymbolSearch(query) {
+  try {
+    const res  = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${KEYS.FINNHUB}`);
+    const data = await res.json();
+    if (!data.result || !data.result.length) {
+      searchDropdown.innerHTML = `<div class="sr-searching">No results for "${escHtml(query)}"</div>`;
+      return;
+    }
+    const results = data.result
+      .filter(r => r.symbol && (r.type === 'Common Stock' || r.type === 'EQS' || r.type === ''))
+      .slice(0, 8);
+    renderDropdown(results);
+  } catch (e) {
+    searchDropdown.innerHTML = `<div class="sr-searching">Search unavailable</div>`;
+  }
+}
+
+function renderDropdown(results) {
+  if (!results.length) { hideDropdown(); return; }
+  searchDropdown.innerHTML = results.map(r => {
+    const { sym, label } = normalizeSymbol(r.symbol, r.description);
+    const inScreener = state.screener.some(s => s.sym === sym);
+    return `<div class="sr-item" onclick="selectResult('${escHtml(sym)}','${escHtml(label)}','${escHtml(r.description)}')">
+      <div class="sr-top">
+        <span class="sr-sym">${escHtml(sym)}</span>
+        <span class="${inScreener ? 'sr-chk' : 'sr-add'}">${inScreener ? '✓ IN SCREENER' : '＋ ADD'}</span>
+      </div>
+      <span class="sr-desc">${escHtml((r.description || '').slice(0, 45))}</span>
+      <span class="sr-exch">${escHtml(r.displaySymbol)} · ${escHtml(r.type || 'EQUITY')}</span>
+    </div>`;
+  }).join('');
+  searchDropdown.style.display = 'block';
+}
+
+function selectResult(sym, label, description) {
+  addToScreener(sym, label);
+  fetchChartData(sym, label);
+  clearSearch();
+}
+
+// ── FETCH: GLOBAL STOCKS ──────────────────────────────────────────────────────
+async function fetchGlobalStocks() {
+  try {
+    const results = await Promise.all(
+      GLOBAL_STOCKS.map(s =>
+        fetch(`https://finnhub.io/api/v1/quote?symbol=${s.sym}&token=${KEYS.FINNHUB}`)
+          .then(r => r.json())
+          .then(d => ({ ...s, price: d.c, change: d.d, pct: d.dp, error: !(d.c > 0) }))
+          .catch(() => ({ ...s, error: true }))
+      )
+    );
+    state.global = results.filter(r => !r.error);
+    renderGlobal();
+    buildTicker();
+  } catch (e) { console.warn('Global stocks:', e.message); }
+}
+
+function renderGlobal() {
+  const tb = document.getElementById('tbl-global');
+  if (!state.global.length) {
+    tb.innerHTML = `<tr><td colspan="4" class="neu">No data (market may be closed)</td></tr>`;
+    return;
+  }
+  tb.innerHTML = state.global.map(s => `
+    <tr><td class="sym-col">${s.label}</td>
+    <td>$${fmt(s.price)}</td>
+    <td class="${clsChg(s.change)}">${arrow(s.change)} ${fmt(Math.abs(s.change))}</td>
+    <td class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</td></tr>`
+  ).join('');
+}
+
+// ── FETCH: FX ─────────────────────────────────────────────────────────────────
+async function fetchFX() {
+  try {
+    const res  = await fetch(`https://finnhub.io/api/v1/forex/rates?base=USD&token=${KEYS.FINNHUB}`);
+    const data = await res.json();
+    if (!data.quote) return;
+    state.fxCurr = data.quote;
+    if (!state.fxBase) state.fxBase = { ...data.quote };
+    renderFX();
+    buildTicker();
+  } catch (e) { console.warn('FX:', e.message); }
+}
+
+function renderFX() {
+  if (!state.fxCurr) return;
+  const tb = document.getElementById('tbl-fx');
+  tb.innerHTML = FX_CURRENCIES.map(({ cur, d }) => {
+    const rate = state.fxCurr[cur];
+    const base = state.fxBase ? state.fxBase[cur] : rate;
+    if (!rate) return '';
+    const chg = rate - base;
+    const pct = base ? (chg / base) * 100 : 0;
+    return `<tr>
+      <td class="sym-col">USD/${cur}</td>
+      <td>${fmt(rate, d)}</td>
+      <td class="${clsChg(chg)}">${arrow(chg)} ${fmt(Math.abs(chg), d)}
+        <span class="neu">(${fmt(Math.abs(pct))}%)</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── FETCH: NEWS (screener-focused) ────────────────────────────────────────────
+function getScreenerKeywords() {
+  if (!state.screener.length) return null;
+  return state.screener.map(s => s.label).join(' OR ');
+}
+
+async function fetchNews() {
+  const items  = [];
+  const kw     = getScreenerKeywords();
+
+  // NewsAPI
+  try {
+    const url = kw
+      ? `https://newsapi.org/v2/top-headlines?q=${encodeURIComponent(kw)}&language=en&pageSize=10&apiKey=${KEYS.NEWS}`
+      : `https://newsapi.org/v2/top-headlines?country=in&category=business&pageSize=12&apiKey=${KEYS.NEWS}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.articles) {
+      data.articles.forEach(a => {
+        if (!a.title || a.title === '[Removed]') return;
+        items.push({
+          ts:  fmtISTTime(a.publishedAt),
+          src: (a.source?.name || 'NEWS').slice(0, 18),
+          hl:  a.title.replace(/ - [^-]+$/, ''),
+          url: a.url || '#'
+        });
+      });
+    }
+  } catch (e) { console.log('NewsAPI:', e.message); }
+
+  // RSS feeds
+  const rssItems = [];
+  await fetchRSS('https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', 'ET MARKETS',   rssItems, 14);
+  await fetchRSS('https://www.moneycontrol.com/rss/MCtopnews.xml',                      'MONEYCTRL',    rssItems, 10);
+  await fetchRSS('https://www.livemint.com/rss/markets',                                'LIVEMINT',     rssItems, 8);
+
+  // Filter RSS by screener labels if screener populated
+  const labels = state.screener.map(s => s.label.toUpperCase());
+  const filtered = (labels.length > 0)
+    ? rssItems.filter(it => labels.some(l => it.hl.toUpperCase().includes(l)))
+    : rssItems;
+  items.push(...filtered);
+
+  const seen = new Set();
+  state.news = items.filter(n => {
+    const key = n.hl.slice(0, 60);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 30);
+
+  renderNews();
+  document.getElementById('news-badge').textContent = state.news.length + ' ITEMS';
+}
+
+async function fetchRSS(feedUrl, source, arr, count = 8) {
+  try {
+    const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&api_key=${KEYS.RSS}&count=${count}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.items) {
+      data.items.forEach(item => {
+        if (!item.title) return;
+        arr.push({
+          ts:  fmtISTTime(item.pubDate),
+          src: source,
+          hl:  item.title.replace(/\s+/g, ' ').trim(),
+          url: item.link || '#'
+        });
+      });
+    }
+  } catch (e) { console.log('RSS ' + source + ':', e.message); }
 }
 
 function renderNews() {
   const feed = document.getElementById('news-feed');
-  feed.innerHTML = NEWS_ITEMS.map(n => `
-    <div class="news-item">
+  if (!state.news.length) {
+    feed.innerHTML = `<div class="neu" style="padding:8px 4px;font-size:11px">No news loaded</div>`;
+    return;
+  }
+  feed.innerHTML = state.news.map(n => `
+    <div class="news-item" onclick="window.open('${escHtml(n.url)}','_blank')">
       <span class="ts">${n.ts}</span>
-      <span class="src"> [${n.src}] </span>
-      <span class="hl">${n.hl}</span>
+      <span class="src"> [${escHtml(n.src)}]</span>
+      <span class="hl">${escHtml(n.hl)}</span>
     </div>`).join('');
 }
 
-// ─── TICKER TAPE ─────────────────────────────────────────────────────────────
-function buildTicker() {
-  const items = [
-    ...state.indices.map(i =>
-      `<span class="sym-col">${i.sym}</span> ${fmt(i.val)} <span class="${clsChg(i.pct)}">${arrow(i.pct)}${fmt(Math.abs(i.pct))}%</span>`),
-    ...state.fx.map(f =>
-      `<span class="sym-col">${f.pair}</span> ${fmt(f.val, 4)} <span class="${clsChg(f.chg)}">${arrow(f.chg)}</span>`),
-    ...state.comm.slice(0,4).map(c =>
-      `<span class="sym-col">${c.name}</span> ${fmt(c.val, 2)} <span class="${clsChg(c.pct)}">${arrow(c.pct)}${fmt(Math.abs(c.pct))}%</span>`),
-  ];
-  const html = items.map(h => `<span class="tick-item">${h} &nbsp;|</span>`).join('');
-  document.getElementById('ticker').innerHTML = html + html; // duplicate for seamless loop
+// ── FETCH: CORPORATE ANNOUNCEMENTS ───────────────────────────────────────────
+async function fetchAnnouncements() {
+  if (!state.screener.length) {
+    state.announcements = [];
+    renderAnnouncements();
+    return;
+  }
+
+  const items  = [];
+  const labels = state.screener.map(s => s.label.toUpperCase());
+
+  // BSE RSS
+  try {
+    const bseUrl = 'https://www.bseindia.com/Rssfeed/RSS_Feed_Corporate_Announcements.aspx';
+    const url    = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(bseUrl)}&api_key=${KEYS.RSS}&count=50`;
+    const res    = await fetch(url);
+    const data   = await res.json();
+    if (data.items) {
+      data.items
+        .filter(it => labels.some(l => (it.title || '').toUpperCase().includes(l)))
+        .forEach(it => {
+          items.push({
+            ts:  fmtISTTime(it.pubDate),
+            co:  detectCompany(it.title, labels),
+            hl:  it.title.replace(/\s+/g, ' ').trim(),
+            url: it.link || '#'
+          });
+        });
+    }
+  } catch (e) { console.log('BSE Announcements RSS:', e.message); }
+
+  // Finnhub company-news for non-NSE screener stocks
+  const today   = new Date();
+  const fromDt  = new Date(today); fromDt.setDate(fromDt.getDate() - 30);
+  const fromStr = fromDt.toISOString().slice(0, 10);
+  const toStr   = today.toISOString().slice(0, 10);
+
+  await Promise.all(
+    state.screener.filter(s => !isNSE(s.sym)).map(s =>
+      fetch(`https://finnhub.io/api/v1/company-news?symbol=${s.sym}&from=${fromStr}&to=${toStr}&token=${KEYS.FINNHUB}`)
+        .then(r => r.json())
+        .then(articles => {
+          if (!Array.isArray(articles)) return;
+          articles
+            .filter(a => a.category === 'company news' || a.category === 'earnings')
+            .slice(0, 5)
+            .forEach(a => {
+              items.push({
+                ts:  new Date(a.datetime * 1000).toLocaleTimeString('en-IN',
+                       { timeZone: 'Asia/Kolkata', hour12: false, hour: '2-digit', minute: '2-digit' }),
+                co:  s.label,
+                hl:  a.headline || '',
+                url: a.url || '#'
+              });
+            });
+        })
+        .catch(() => {})
+    )
+  );
+
+  const seen = new Set();
+  state.announcements = items.filter(a => {
+    const key = a.hl.slice(0, 60);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 25);
+
+  renderAnnouncements();
+  document.getElementById('ann-badge').textContent = state.announcements.length + ' ITEMS';
 }
 
-// ─── CHART ───────────────────────────────────────────────────────────────────
+function detectCompany(title, labels) {
+  const up = (title || '').toUpperCase();
+  return labels.find(l => up.includes(l)) || '–';
+}
+
+function renderAnnouncements() {
+  const feed = document.getElementById('ann-feed');
+  if (!state.screener.length) {
+    feed.innerHTML = `<div class="neu" style="padding:8px 4px;font-size:11px">Add stocks to screener to see announcements</div>`;
+    return;
+  }
+  if (!state.announcements.length) {
+    feed.innerHTML = `<div class="loading">No announcements found for screener companies</div>`;
+    return;
+  }
+  feed.innerHTML = state.announcements.map(a => `
+    <div class="ann-item" onclick="window.open('${escHtml(a.url)}','_blank')">
+      <span class="ann-ts">${a.ts}</span>
+      <span class="ann-co"> [${escHtml(a.co)}]</span>
+      <span class="ann-hl">${escHtml(a.hl)}</span>
+    </div>`).join('');
+}
+
+// ── FETCH: CHART DATA (OHLC) ──────────────────────────────────────────────────
+async function fetchChartData(symbol, name) {
+  const wrap = document.getElementById('chart-canvas-wrap');
+  const overlay = document.getElementById('chart-overlay');
+  overlay.style.display = 'block';
+  overlay.textContent = 'Loading ' + symbol + '...';
+
+  const { interval, outputsize, label: rangeLabel } = state.chartInterval;
+
+  try {
+    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${KEYS.TWELVE}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+
+    if (data.values && data.values.length > 0) {
+      state.chart = data.values.slice().reverse().map(v => ({
+        open:     parseFloat(v.open),
+        high:     parseFloat(v.high),
+        low:      parseFloat(v.low),
+        close:    parseFloat(v.close),
+        datetime: v.datetime,
+      }));
+      state.chartSym  = symbol;
+      state.chartName = name || symbol.split(':')[0];
+
+      const sym0 = symbol.split(':')[0];
+      document.getElementById('chart-title').textContent =
+        `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
+      overlay.style.display = 'none';
+    } else {
+      overlay.textContent = (data.message || 'No data available') + ' (market may be closed)';
+    }
+  } catch (e) {
+    overlay.textContent = 'Chart unavailable';
+    console.warn('Chart fetch:', e.message);
+  }
+  drawChart();
+}
+
+// ── CHART: CANDLESTICK ────────────────────────────────────────────────────────
 function drawChart() {
   const canvas = document.getElementById('chart');
-  const parent = canvas.parentElement;
-  canvas.width  = parent.clientWidth;
-  canvas.height = parent.clientHeight;
+  const wrap   = document.getElementById('chart-canvas-wrap');
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+  if (!W || !H) return;
+
+  canvas.width  = W;
+  canvas.height = H;
+
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const pad = { t:10, r:60, b:30, l:10 };
+  const pad = { t: 14, r: 72, b: 28, l: 8 };
   const pw = W - pad.l - pad.r;
   const ph = H - pad.t - pad.b;
 
   ctx.clearRect(0, 0, W, H);
 
-  // background grid
+  const data = state.chart;
+  if (!data || data.length < 2) return;
+
+  // Price range across all OHLC
+  const allPrices = data.flatMap(c => [c.high, c.low]);
+  const rawMin = Math.min(...allPrices);
+  const rawMax = Math.max(...allPrices);
+  const range  = rawMax - rawMin || 1;
+  const padPct = range * 0.06;
+  const minP   = rawMin - padPct;
+  const maxP   = rawMax + padPct;
+  const rangeP = maxP - minP;
+
+  const yAt = v => pad.t + ph - ((v - minP) / rangeP) * ph;
+  const step = pw / data.length;
+  const candleW = Math.max(1.5, step * 0.7);
+
+  // Grid
   ctx.strokeStyle = '#111';
   ctx.lineWidth = 1;
-  for (let y = 0; y <= 5; y++) {
-    const yy = pad.t + (y / 5) * ph;
+  for (let i = 0; i <= 5; i++) {
+    const yy = pad.t + (i / 5) * ph;
     ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke();
   }
 
-  const min = Math.min(...chartData);
-  const max = Math.max(...chartData);
-  const range = max - min || 1;
+  // Candles
+  data.forEach((c, i) => {
+    const cx = pad.l + i * step + step / 2;
 
-  function xAt(i) { return pad.l + (i / (chartData.length - 1)) * pw; }
-  function yAt(v) { return pad.t + ph - ((v - min) / range) * ph; }
+    const isBull = c.close >= c.open;
+    const color  = isBull ? '#00ff41' : '#ff3333';
 
-  // area fill
-  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ph);
-  grad.addColorStop(0, 'rgba(0,255,65,0.25)');
-  grad.addColorStop(1, 'rgba(0,255,65,0)');
-  ctx.beginPath();
-  ctx.moveTo(xAt(0), pad.t + ph);
-  chartData.forEach((v, i) => ctx.lineTo(xAt(i), yAt(v)));
-  ctx.lineTo(xAt(chartData.length - 1), pad.t + ph);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
+    // Wick
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1;
+    ctx.moveTo(cx, yAt(c.high));
+    ctx.lineTo(cx, yAt(c.low));
+    ctx.stroke();
 
-  // line
-  ctx.beginPath();
-  ctx.strokeStyle = '#00ff41';
-  ctx.lineWidth = 1.5;
-  chartData.forEach((v, i) => i === 0 ? ctx.moveTo(xAt(i), yAt(v)) : ctx.lineTo(xAt(i), yAt(v)));
-  ctx.stroke();
+    // Body
+    const bodyTop = yAt(Math.max(c.open, c.close));
+    const bodyBot = yAt(Math.min(c.open, c.close));
+    const bodyH   = Math.max(1, bodyBot - bodyTop);
 
-  // price labels on right axis
-  ctx.fillStyle = '#888';
+    // Fill bullish solid, bearish outlined for clarity
+    if (isBull) {
+      ctx.fillStyle = color;
+      ctx.fillRect(cx - candleW / 2, bodyTop, candleW, bodyH);
+    } else {
+      ctx.fillStyle = color;
+      ctx.fillRect(cx - candleW / 2, bodyTop, candleW, bodyH);
+    }
+  });
+
+  // Y-axis labels
+  ctx.fillStyle = '#555';
   ctx.font = '10px Courier New';
   ctx.textAlign = 'left';
-  for (let y = 0; y <= 4; y++) {
-    const val = min + (y / 4) * range;
-    const yy  = yAt(val);
-    ctx.fillText(fmt(val), W - pad.r + 4, yy + 4);
+  for (let i = 0; i <= 4; i++) {
+    const val = minP + (i / 4) * rangeP;
+    ctx.fillText(fmt(val), W - pad.r + 4, yAt(val) + 4);
   }
 
-  // last price callout
-  const last = chartData[chartData.length - 1];
-  const ly = yAt(last);
-  ctx.fillStyle = '#00ff41';
+  // X-axis datetime labels (~5 evenly spaced)
+  ctx.fillStyle = '#444';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'center';
+  const labelCount = Math.min(5, data.length);
+  for (let i = 0; i < labelCount; i++) {
+    const idx = Math.floor(i * (data.length - 1) / Math.max(1, labelCount - 1));
+    const cx  = pad.l + idx * step + step / 2;
+    ctx.fillText(fmtDatetimeLabel(data[idx].datetime), cx, H - pad.b + 14);
+  }
+
+  // Last price badge
+  const last  = data[data.length - 1].close;
+  const first = data[0].close;
+  const chg   = last - first;
+  const pct   = (chg / first) * 100;
+  const ly    = yAt(last);
+  const bClr  = last >= first ? '#00ff41' : '#ff3333';
+
+  ctx.fillStyle = bClr;
   ctx.fillRect(W - pad.r + 2, ly - 8, pad.r - 4, 16);
   ctx.fillStyle = '#000';
   ctx.font = 'bold 10px Courier New';
+  ctx.textAlign = 'left';
   ctx.fillText(fmt(last), W - pad.r + 4, ly + 4);
 
-  // update header price
-  const chg = last - chartData[0];
-  const pct  = (chg / chartData[0]) * 100;
-  const el   = document.getElementById('chart-price');
-  el.textContent = `${fmt(last)} ${arrow(chg)} ${fmt(Math.abs(chg))} (${fmt(Math.abs(pct))}%)`;
-  el.className = clsChg(chg);
+  // Update header
+  const el = document.getElementById('chart-price');
+  el.textContent = `${fmt(last)}  ${arrow(chg)} ${fmt(Math.abs(chg))} (${fmt(Math.abs(pct))}%)`;
+  el.className   = clsChg(chg);
 }
 
-// ─── COMMAND LINE ─────────────────────────────────────────────────────────────
-const CMD_HELP = `AVAILABLE COMMANDS: <br>
-HELP — show commands &nbsp;|&nbsp;
-&lt;SYMBOL&gt;&lt;EQUITY&gt; — quote &nbsp;|&nbsp;
-FX — FX panel &nbsp;|&nbsp;
-NEWS — news feed &nbsp;|&nbsp;
-CLEAR — clear output`;
+function fmtDatetimeLabel(dt) {
+  const iv = state.chartInterval.interval;
+  if (iv === '5min' || iv === '1h') {
+    return dt.length > 10 ? dt.slice(11, 16) : dt.slice(5);
+  } else if (iv === '1day') {
+    const p = dt.slice(0, 10).split('-');
+    return `${p[1]}/${p[2]}`;
+  } else {
+    const d = new Date(dt);
+    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  }
+}
+
+// ── TIME RANGE SELECTOR ───────────────────────────────────────────────────────
+function setTimeRange(interval, outputsize, label, btn) {
+  state.chartInterval = { interval, outputsize, label };
+  document.querySelectorAll('.tr-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  fetchChartData(state.chartSym, state.chartName);
+}
+
+// ── TICKER TAPE ───────────────────────────────────────────────────────────────
+function buildTicker() {
+  const parts = [];
+  state.screener.filter(s => !s.error && s.price).forEach(s => {
+    const cur = (s.isNSE !== false) ? '₹' : '$';
+    parts.push(`<span class="sym-col">${s.label}</span> ${cur}${fmt(s.price)} <span class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</span>`);
+  });
+  state.global.forEach(s => {
+    parts.push(`<span class="sym-col">${s.label}</span> $${fmt(s.price)} <span class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</span>`);
+  });
+  if (state.fxCurr) {
+    ['INR','EUR','GBP','JPY'].forEach(cur => {
+      const r = state.fxCurr[cur];
+      if (r) parts.push(`<span class="sym-col">USD/${cur}</span> ${fmt(r, cur==='INR'||cur==='JPY'?2:4)}`);
+    });
+  }
+  if (!parts.length) return;
+  const html = parts.map(h => `<span class="tick-item">${h} &nbsp;|</span>`).join('');
+  document.getElementById('ticker').innerHTML = html + html;
+}
+
+// ── COMMAND LINE ──────────────────────────────────────────────────────────────
+const HELP_HTML = `<span class="neu">HELP | CLEAR | &lt;SYM&gt; e.g. INFY:NSE · TCS:NSE · AAPL · MSFT</span>`;
 
 document.getElementById('cmd-input').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   const raw = e.target.value.trim().toUpperCase();
-  const out = document.getElementById('cmd-out');
   e.target.value = '';
-
   if (!raw) return;
 
-  if (raw === 'HELP') { out.innerHTML = CMD_HELP; return; }
-  if (raw === 'CLEAR') { out.innerHTML = ''; return; }
-  if (raw === 'NEWS') { out.innerHTML = 'NEWS FEED ACTIVE — see panel below right'; return; }
+  if (raw === 'HELP')  { cmdOut(HELP_HTML); return; }
+  if (raw === 'CLEAR') { cmdOut(''); return; }
 
-  // equity lookup
-  const idx = state.indices.find(i => raw.includes(i.sym));
-  if (idx) {
-    out.innerHTML = `${idx.sym} &nbsp; LAST: <span class="up">${fmt(idx.val)}</span> &nbsp; CHG: <span class="${clsChg(idx.chg)}">${arrow(idx.chg)} ${fmt(Math.abs(idx.chg))} (${fmt(idx.pct)}%)</span>`;
+  // Screener lookup
+  const sc = state.screener.find(s => s.label === raw || s.sym.split(':')[0] === raw || s.sym === raw);
+  if (sc && !sc.error) {
+    const cur = sc.isNSE !== false ? '₹' : '$';
+    cmdOut(`${sc.label} &nbsp; ${cur}${fmt(sc.price)} &nbsp; <span class="${clsChg(sc.change)}">${arrow(sc.change)} ${fmt(Math.abs(sc.change))} (${fmt(sc.pct)}%)</span>`);
+    fetchChartData(sc.sym, sc.label);
     return;
   }
-  out.innerHTML = `<span style="color:#ff3333">UNKNOWN FUNCTION: ${raw} — type HELP&lt;GO&gt;</span>`;
+
+  // Global lookup
+  const gs = state.global.find(s => s.sym === raw || s.label === raw);
+  if (gs) {
+    cmdOut(`${gs.label} &nbsp; $${fmt(gs.price)} &nbsp; <span class="${clsChg(gs.change)}">${arrow(gs.change)} ${fmt(Math.abs(gs.change))} (${fmt(gs.pct)}%)</span>`);
+    return;
+  }
+
+  // Live Finnhub lookup
+  cmdOut(`<span class="neu">Fetching ${escHtml(raw)}...</span>`);
+  fetch(`https://finnhub.io/api/v1/quote?symbol=${raw}&token=${KEYS.FINNHUB}`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.c > 0) {
+        cmdOut(`${raw} &nbsp; $${fmt(d.c)} &nbsp; <span class="${clsChg(d.d)}">${arrow(d.d)} ${fmt(Math.abs(d.d))} (${fmt(d.dp)}%)</span>`);
+        fetchChartData(raw, raw.split(':')[0]);
+      } else {
+        // Try Twelve Data
+        fetchChartData(raw, raw.split(':')[0]);
+        cmdOut(`<span class="neu">Loading ${escHtml(raw)} via Twelve Data...</span>`);
+      }
+    })
+    .catch(() => cmdOut(`<span class="dn">SYMBOL NOT FOUND: ${escHtml(raw)}</span>`));
 });
 
-// ─── VIEW SWITCHER ────────────────────────────────────────────────────────────
-function setView(v) {
+// ── VIEW SWITCHER ─────────────────────────────────────────────────────────────
+function setView(v, btn) {
   document.querySelectorAll('#navbar button').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
-  document.getElementById('cmd-out').innerHTML =
-    `LOADING ${v.toUpperCase()} VIEW... &nbsp; <span style="color:#888">[DEMO — all panels update live]</span>`;
+  btn.classList.add('active');
+  const labels = {
+    market:'FULL MARKET OVERVIEW', screener:'STOCK SCREENER',
+    global:'GLOBAL MARKETS', fx:'FX / INR',
+    news:'MARKET NEWS', announcements:'CORP. ANNOUNCEMENTS'
+  };
+  cmdOut(`<span class="neu">${labels[v] || v.toUpperCase()}</span>`);
 }
 
-// ─── MAIN LOOP ────────────────────────────────────────────────────────────────
-function tick() {
-  simulateTick();
-  renderIndices();
-  renderFX();
-  renderComm();
-  drawChart();
-  buildTicker();
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  state.screener = loadScreenerFromStorage();
+  renderScreener();
+
+  await Promise.all([fetchScreenerQuotes(), fetchGlobalStocks(), fetchFX()]);
+  fetchChartData(state.chartSym, state.chartName);
+  fetchNews();
+  fetchAnnouncements();
 }
 
-renderNews();
-tick();
-setInterval(tick, 1500);
+// Refresh intervals
+setInterval(fetchScreenerQuotes,  120_000);   // 2 min
+setInterval(fetchGlobalStocks,     60_000);   // 1 min
+setInterval(fetchFX,               90_000);   // 90 sec
+setInterval(fetchNews,          1_200_000);   // 20 min (respects rss2json limits)
+setInterval(fetchAnnouncements,   900_000);   // 15 min
+setInterval(() => fetchChartData(state.chartSym, state.chartName), 180_000); // 3 min
+
+setInterval(drawChart, 2000);
 window.addEventListener('resize', drawChart);
+
+init();
 </script>
 </body>
 </html>

@@ -469,8 +469,8 @@
   <!-- Panel 4: FX Rates (col 2, row 2) -->
   <div class="panel">
     <div class="panel-header">
-      <span>FX RATES  ·  USD BASE</span>
-      <span class="neu" style="font-size:10px">SPOT</span>
+      <span>FX RATES  ·  INR BASE</span>
+      <span class="neu" style="font-size:10px">₹ / UNIT</span>
     </div>
     <div class="panel-body">
       <table>
@@ -553,11 +553,12 @@ const DEFAULT_GLOBAL_STOCKS = [
   { sym: 'META',  label: 'META'   },
 ];
 
+// Currencies shown vs INR — "1 FOREIGN = X ₹"
 const FX_CURRENCIES = [
-  { cur: 'INR', d: 2 }, { cur: 'EUR', d: 4 },
-  { cur: 'GBP', d: 4 }, { cur: 'JPY', d: 2 },
-  { cur: 'AUD', d: 4 }, { cur: 'SGD', d: 4 },
-  { cur: 'CNY', d: 4 }, { cur: 'CHF', d: 4 },
+  { cur: 'USD', d: 2 }, { cur: 'EUR', d: 2 },
+  { cur: 'GBP', d: 2 }, { cur: 'JPY', d: 3 },
+  { cur: 'AUD', d: 2 }, { cur: 'SGD', d: 2 },
+  { cur: 'CNY', d: 2 }, { cur: 'CHF', d: 2 },
 ];
 
 // ── SECTOR INTELLIGENCE MAP ───────────────────────────────────────────────────
@@ -1166,16 +1167,27 @@ async function fetchFX() {
 
 function renderFX() {
   if (!state.fxCurr) return;
+  // All rates are derived from a USD-base Finnhub response.
+  // Formula: 1 FOREIGN = (INR_rate / FOREIGN_USD_rate) ₹
+  const inrCurr = state.fxCurr['INR'];
+  const inrBase = state.fxBase ? state.fxBase['INR'] : inrCurr;
+  if (!inrCurr) return;
+
   const tb = document.getElementById('tbl-fx');
   tb.innerHTML = FX_CURRENCIES.map(({ cur, d }) => {
-    const rate = state.fxCurr[cur];
-    const base = state.fxBase ? state.fxBase[cur] : rate;
-    if (!rate) return '';
-    const chg = rate - base;
-    const pct = base ? (chg / base) * 100 : 0;
+    // USD is the API base so its "rate" is implicitly 1
+    const divCurr = cur === 'USD' ? (state.fxCurr['USD'] || 1) : state.fxCurr[cur];
+    const divBase = cur === 'USD'
+      ? (state.fxBase ? (state.fxBase['USD'] || 1) : 1)
+      : (state.fxBase ? state.fxBase[cur] : divCurr);
+    if (!divCurr) return '';
+    const rate = inrCurr / divCurr;   // ₹ per 1 unit of cur
+    const base = inrBase / divBase;
+    const chg  = rate - base;
+    const pct  = base ? (chg / base) * 100 : 0;
     return `<tr>
-      <td class="sym-col">USD/${cur}</td>
-      <td>${fmt(rate, d)}</td>
+      <td class="sym-col">${cur}/INR</td>
+      <td>₹${fmt(rate, d)}</td>
       <td class="${clsChg(chg)}">${arrow(chg)} ${fmt(Math.abs(chg), d)}
         <span class="neu">(${fmt(Math.abs(pct))}%)</span></td>
     </tr>`;
@@ -1746,10 +1758,12 @@ function buildTicker() {
   state.global.forEach(s => {
     parts.push(`<span class="sym-col">${s.label}</span> $${fmt(s.price)} <span class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</span>`);
   });
-  if (state.fxCurr) {
-    ['INR','EUR','GBP','JPY'].forEach(cur => {
-      const r = state.fxCurr[cur];
-      if (r) parts.push(`<span class="sym-col">USD/${cur}</span> ${fmt(r, cur==='INR'||cur==='JPY'?2:4)}`);
+  if (state.fxCurr && state.fxCurr['INR']) {
+    const inrR = state.fxCurr['INR'];
+    [['USD', 1, 2], ['EUR', state.fxCurr['EUR'], 2], ['GBP', state.fxCurr['GBP'], 2], ['JPY', state.fxCurr['JPY'], 3]].forEach(([cur, div, d]) => {
+      if (!div) return;
+      const r = inrR / div;
+      parts.push(`<span class="sym-col">${cur}/INR</span> ₹${fmt(r, d)}`);
     });
   }
   if (!parts.length) return;

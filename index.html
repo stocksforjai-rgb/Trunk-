@@ -289,6 +289,35 @@
     .news-item .hl  { color: #ffaa00; font-size: 11px; display: block; margin-top: 2px; }
     .ann-item .ann-hl { color: #ffcc66; font-size: 11px; display: block; margin-top: 2px; }
 
+    /* ── NEWS TABS ── */
+    .news-tab {
+      background: #000;
+      border: 1px solid #333;
+      color: #555;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 2px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      letter-spacing: 0.4px;
+    }
+    .news-tab:hover { border-color: #ff8c00; color: #ff8c00; }
+    .news-tab.active { background: #ff8c00; color: #000; border-color: #ff8c00; }
+    /* international source badge — cyan so it stands out from orange nationals */
+    .intl-src { color: #00bcd4 !important; font-size: 10px; font-weight: bold; }
+    /* sector context line under tab header */
+    #sector-context {
+      font-size: 9px;
+      color: #444;
+      padding: 2px 0 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #sector-context .sec-name { color: #00ff41; }
+    #sector-context .sec-geo  { color: #555; }
+
     /* ── STATUS DOTS ── */
     .dot-open  { color: #00ff41; }
     .dot-close { color: #ff3333; }
@@ -433,11 +462,20 @@
     </div>
   </div>
 
-  <!-- Panel 5: Market News (col 3, row 2) -->
+  <!-- Panel 5: Market / Sector Intelligence News (col 3, row 2) -->
   <div class="panel">
-    <div class="panel-header">
-      <span>MARKET NEWS</span>
-      <span id="news-badge" class="neu" style="font-size:10px">LOADING...</span>
+    <div class="panel-header" style="flex-direction:column;align-items:stretch;gap:0;padding:3px 6px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;gap:2px">
+          <button class="news-tab active" id="tab-market" onclick="switchNewsTab('market')">MARKET</button>
+          <button class="news-tab" id="tab-sector" onclick="switchNewsTab('sector')">SECTOR:&nbsp;<span id="sector-tab-label" style="color:#ffdd00">SELECT STOCK</span></button>
+        </div>
+        <span id="news-badge" class="neu" style="font-size:10px">LOADING...</span>
+      </div>
+      <div id="sector-context" style="display:none">
+        <span class="sec-name" id="sec-name-label"></span>
+        <span class="sec-geo"  id="sec-geo-label"></span>
+      </div>
     </div>
     <div class="panel-body" id="news-feed">
       <div class="loading">Fetching news...</div>
@@ -504,18 +542,218 @@ const FX_CURRENCIES = [
   { cur: 'CNY', d: 4 }, { cur: 'CHF', d: 4 },
 ];
 
+// ── SECTOR INTELLIGENCE MAP ───────────────────────────────────────────────────
+// Each entry: { sector, q (NewsAPI query terms), geo (geopolitical/macro terms), intl (fetch intl sources) }
+// Used to drive the SECTOR tab in the news panel when a stock is selected.
+const SECTOR_MAP = {
+  // ── ADANI GROUP ──────────────────────────────────────────────────────────────
+  ADANIENT:   { sector: 'Diversified Conglomerate',
+    q:   'Adani ports shipping energy airports infrastructure coal India',
+    geo: 'Red Sea OR Suez Canal OR OPEC OR "shipping rates" OR "BDI" OR Iran OR Hormuz',
+    intl: true },
+  ADANIPORTS: { sector: 'Ports & Logistics',
+    q:   'ports shipping container logistics maritime cargo freight "trade routes" India port',
+    geo: '"Red Sea" OR "Suez Canal" OR "Strait of Hormuz" OR "shipping lanes" OR piracy OR "BDI Baltic" OR "container rates" OR "APSEZ" OR "Iran sanctions" OR "Houthi"',
+    intl: true },
+  ADANIPOWER: { sector: 'Thermal Power Generation',
+    q:   'India coal power electricity thermal generation energy grid',
+    geo: '"coal prices" OR "coal imports" OR "energy transition" OR "power demand India" OR "electricity tariff"',
+    intl: true },
+  ADANIGREEN: { sector: 'Renewable Energy',
+    q:   'India renewable energy solar wind "green hydrogen" power capacity',
+    geo: '"green energy" OR "solar capacity" OR "wind energy" OR "energy transition" OR "carbon neutral" OR "COP climate"',
+    intl: true },
+  ADANIGT:    { sector: 'Gas Transmission',
+    q:   'India natural gas LNG pipeline transmission energy',
+    geo: '"LNG prices" OR "gas supply" OR "LNG geopolitics" OR "Qatar gas" OR "Russia gas"',
+    intl: true },
+  // ── RELIANCE ─────────────────────────────────────────────────────────────────
+  RELIANCE:   { sector: 'Oil · Refining · Telecom · Retail',
+    q:   'Reliance Industries oil refinery petrochemical Jio telecom India retail 5G',
+    geo: '"crude oil" OR OPEC OR "Middle East oil" OR "oil prices" OR "telecom spectrum India" OR "5G rollout"',
+    intl: true },
+  // ── BANKING & FINANCE ────────────────────────────────────────────────────────
+  HDFCBANK:   { sector: 'Private Banking',
+    q:   'India banking credit loans RBI "monetary policy" "interest rates" retail NBFC HDFC',
+    geo: '"Fed rate" OR "US interest rates" OR "global banking" OR "credit cycle" OR "RBI repo rate"',
+    intl: true },
+  ICICIBANK:  { sector: 'Private Banking',
+    q:   'India banking ICICI credit retail corporate loans RBI "interest rates"',
+    geo: '"Fed rate" OR "global banking" OR "credit cycle" OR "RBI repo rate"',
+    intl: true },
+  SBIN:       { sector: 'PSU Banking',
+    q:   'SBI "State Bank" India public sector banking government credit RBI NPA',
+    geo: '"RBI policy" OR "India economy" OR "government spending" OR "PSU bank" OR "credit growth"',
+    intl: false },
+  BAJFINANCE: { sector: 'Consumer Finance / NBFC',
+    q:   'India "consumer lending" NBFC retail loans EMI credit fintech "Bajaj Finance"',
+    geo: '"interest rates India" OR "RBI rate" OR "consumer spending" OR "credit quality" OR "NBFC stress"',
+    intl: true },
+  BAJAJFINSV: { sector: 'Diversified Financial Services',
+    q:   'India "financial services" insurance lending "wealth management" Bajaj',
+    geo: '"insurance India" OR "fintech" OR "wealth management" OR "NBFC India"',
+    intl: false },
+  AXISBANK:   { sector: 'Private Banking',
+    q:   'India banking retail corporate loans RBI "Axis Bank" "interest rates"',
+    geo: '"Fed rate" OR "global banking" OR "RBI repo" OR "credit cycle"',
+    intl: true },
+  KOTAKBANK:  { sector: 'Private Banking & Wealth',
+    q:   'India banking "wealth management" retail "Kotak" credit RBI',
+    geo: '"Fed rate" OR "RBI policy" OR "credit cycle" OR "wealth management India"',
+    intl: true },
+  // ── IT SERVICES ──────────────────────────────────────────────────────────────
+  TCS:        { sector: 'IT Services & Consulting',
+    q:   'IT outsourcing "digital transformation" AI cloud India technology consulting TCS',
+    geo: '"US tech spending" OR "IT budget cut" OR "H1B visa" OR "dollar rupee" OR "tech layoffs" OR "AI adoption enterprise"',
+    intl: true },
+  INFY:       { sector: 'IT Services & Consulting',
+    q:   'Infosys IT outsourcing AI cloud consulting "digital transformation" technology',
+    geo: '"US tech spending" OR "IT budget" OR "H1B visa" OR "dollar rupee" OR "AI enterprise" OR "tech spending US"',
+    intl: true },
+  WIPRO:      { sector: 'IT Services',
+    q:   'Wipro IT services technology consulting cloud AI "digital transformation" outsourcing',
+    geo: '"US tech spending" OR "H1B visa" OR "dollar rupee" OR "IT outsourcing" OR "enterprise AI"',
+    intl: true },
+  HCLTECH:    { sector: 'IT Infrastructure & Services',
+    q:   'HCL Technologies IT infrastructure cloud "digital transformation" engineering services',
+    geo: '"US tech spending" OR "enterprise technology" OR "cloud market" OR "IT services demand"',
+    intl: true },
+  TECHM:      { sector: 'IT & Telecom Technology',
+    q:   'Tech Mahindra IT telecom 5G digital cloud AI services',
+    geo: '"5G rollout" OR "telecom technology" OR "IT outsourcing" OR "dollar rupee"',
+    intl: true },
+  // ── OIL & GAS ────────────────────────────────────────────────────────────────
+  ONGC:       { sector: 'Upstream Oil & Gas',
+    q:   'ONGC oil gas exploration production India petroleum upstream energy',
+    geo: '"crude oil" OR OPEC OR "Middle East" OR "oil prices" OR "natural gas prices" OR "energy geopolitics" OR Iran',
+    intl: true },
+  IOC:        { sector: 'Oil Refining & Distribution',
+    q:   '"Indian Oil" refinery petroleum fuel diesel petrol India distribution',
+    geo: '"crude oil prices" OR OPEC OR "refining margins" OR "fuel prices India" OR "oil geopolitics"',
+    intl: true },
+  BPCL:       { sector: 'Oil Refining & Gas',
+    q:   'BPCL petroleum refinery LPG "natural gas" fuel India',
+    geo: '"crude oil prices" OR OPEC OR "refining margins" OR "gas prices" OR "energy sector"',
+    intl: true },
+  // ── CEMENT & INFRASTRUCTURE ──────────────────────────────────────────────────
+  ULTRACEMCO: { sector: 'Cement',
+    q:   'cement construction India "real estate" infrastructure housing demand',
+    geo: '"cement prices" OR "construction sector India" OR "housing demand" OR "limestone" OR "energy cost cement"',
+    intl: false },
+  LT:         { sector: 'Engineering & EPC Construction',
+    q:   '"L&T" Larsen engineering construction infrastructure EPC contracts India government defence',
+    geo: '"infrastructure spending" OR "Middle East projects" OR "EPC contracts" OR "government capex India" OR "defence orders"',
+    intl: true },
+  // ── AUTOMOBILES ──────────────────────────────────────────────────────────────
+  MARUTI:     { sector: 'Passenger Automobiles',
+    q:   'Maruti Suzuki cars automobile India sales EV "electric vehicles" passenger vehicles',
+    geo: '"EV transition" OR "chip shortage" OR "steel prices" OR "Japan auto" OR "India auto sales" OR "Suzuki"',
+    intl: true },
+  TATAMOTORS: { sector: 'Automobiles & EV',
+    q:   '"Tata Motors" "Jaguar Land Rover" EV "electric vehicles" India cars trucks JLR',
+    geo: '"EV market" OR "UK auto" OR "chip supply" OR "electric vehicle Europe" OR "steel prices" OR "lithium"',
+    intl: true },
+  // ── PHARMA ───────────────────────────────────────────────────────────────────
+  SUNPHARMA:  { sector: 'Pharmaceuticals',
+    q:   '"Sun Pharma" generic drugs API India FDA US pharmaceuticals export speciality',
+    geo: '"FDA approval" OR "drug approval" OR "generic drugs US" OR "API China India" OR "pharma export" OR "drug pricing"',
+    intl: true },
+  DRREDDY:    { sector: 'Pharmaceuticals',
+    q:   '"Dr Reddy" generics API pharma India FDA drug approval biosimilars',
+    geo: '"FDA approval" OR "generic drugs" OR "API export" OR "pharma India" OR "drug pricing US"',
+    intl: true },
+  CIPLA:      { sector: 'Pharmaceuticals',
+    q:   'Cipla generic drugs India pharma respiratory FDA approval inhaler',
+    geo: '"FDA approval" OR "generic drugs" OR "drug pricing" OR "pharma export" OR "API costs"',
+    intl: true },
+  // ── METALS ───────────────────────────────────────────────────────────────────
+  TATASTEEL:  { sector: 'Steel',
+    q:   '"Tata Steel" steel production India Europe "iron ore" "coking coal" Corus',
+    geo: '"steel prices" OR "iron ore" OR "coking coal" OR "China steel dumping" OR "EU anti-dumping" OR "trade tariffs steel"',
+    intl: true },
+  JSWSTEEL:   { sector: 'Steel',
+    q:   '"JSW Steel" India steel production "iron ore" "coking coal" export infrastructure',
+    geo: '"steel prices" OR "iron ore prices" OR "China steel" OR "coking coal" OR "trade steel India"',
+    intl: true },
+  HINDALCO:   { sector: 'Aluminium & Copper',
+    q:   'Hindalco aluminium copper metals Novelis India LME smelting',
+    geo: '"aluminium prices" OR LME OR "copper prices" OR "China aluminium" OR "energy cost smelting" OR "bauxite"',
+    intl: true },
+  // ── FMCG ─────────────────────────────────────────────────────────────────────
+  HINDUNILVR: { sector: 'FMCG / Consumer Goods',
+    q:   'HUL "Hindustan Unilever" FMCG "consumer goods" India rural demand inflation pricing',
+    geo: '"palm oil prices" OR "commodity inflation" OR "consumer spending India" OR "rural demand" OR "input costs FMCG"',
+    intl: true },
+  ITC:        { sector: 'FMCG · Tobacco · Hotels',
+    q:   'ITC tobacco cigarettes FMCG hotels paper India consumer goods brands',
+    geo: '"tobacco regulation India" OR "FMCG India" OR "hotel sector" OR "consumer spending"',
+    intl: false },
+  NESTLEIND:  { sector: 'Food & Beverage',
+    q:   'Nestle India food beverage FMCG packaged nutrition consumer goods',
+    geo: '"food inflation" OR "commodity prices food" OR "sugar prices" OR "cocoa" OR "wheat prices" OR "global food supply"',
+    intl: true },
+  // ── TELECOM ──────────────────────────────────────────────────────────────────
+  BHARTIARTL: { sector: 'Telecom',
+    q:   'Airtel telecom India 5G spectrum broadband enterprise mobile Africa',
+    geo: '"5G global" OR "telecom spectrum" OR Huawei OR Nokia OR Ericsson OR "satellite internet" OR Starlink OR "Africa telecom"',
+    intl: true },
+  // ── POWER ────────────────────────────────────────────────────────────────────
+  NTPC:       { sector: 'Power Generation (Coal & Renewable)',
+    q:   'NTPC coal power India electricity renewable solar energy thermal',
+    geo: '"coal prices" OR "energy transition India" OR "electricity demand" OR "renewable India" OR "carbon target"',
+    intl: false },
+  POWERGRID:  { sector: 'Power Transmission',
+    q:   'Power Grid India transmission infrastructure electricity grid capex',
+    geo: '"energy infrastructure India" OR "power demand" OR "renewable integration" OR "green energy grid"',
+    intl: false },
+  // ── US / GLOBAL ───────────────────────────────────────────────────────────────
+  AAPL:       { sector: 'Consumer Electronics & Software',
+    q:   'Apple iPhone Mac iPad services AI silicon chip India supply',
+    geo: '"China supply chain" OR tariffs OR semiconductor OR "App Store regulation" OR "Apple India factory" OR Taiwan',
+    intl: true },
+  MSFT:       { sector: 'Cloud & Enterprise Software',
+    q:   'Microsoft Azure cloud AI Office enterprise Copilot software data center',
+    geo: '"cloud market" OR "enterprise AI" OR "data center" OR "AI regulation" OR "tech regulation"',
+    intl: true },
+  NVDA:       { sector: 'Semiconductors & AI Infrastructure',
+    q:   'Nvidia GPU AI "machine learning" "data center" chip semiconductor supply',
+    geo: '"chip export controls" OR "semiconductor supply" OR Taiwan OR TSMC OR "AI chips" OR "China chips" OR "US China tech"',
+    intl: true },
+  TSLA:       { sector: 'Electric Vehicles & Energy',
+    q:   'Tesla EV "electric vehicles" autonomous driving energy battery storage',
+    geo: '"EV market" OR "China EV competition" OR "tariffs EV" OR "global auto" OR "battery supply" OR lithium OR "charging infrastructure"',
+    intl: true },
+  AMZN:       { sector: 'E-Commerce & Cloud',
+    q:   'Amazon AWS cloud e-commerce retail logistics AI fulfilment',
+    geo: '"cloud competition" OR antitrust OR "logistics global" OR "AWS data center" OR "trade US"',
+    intl: true },
+  GOOGL:      { sector: 'Digital Advertising & AI',
+    q:   'Google Alphabet search advertising AI cloud YouTube Android Gemini',
+    geo: '"antitrust regulation" OR "AI competition" OR "digital advertising" OR "search market" OR "AI regulation"',
+    intl: true },
+  META:       { sector: 'Social Media & Generative AI',
+    q:   'Meta Facebook Instagram WhatsApp advertising AI metaverse VR Llama',
+    geo: '"digital advertising" OR "AI regulation" OR "social media regulation" OR "data privacy" OR "content moderation"',
+    intl: true },
+};
+
 // ── STATE ─────────────────────────────────────────────────────────────────────
 const state = {
-  screener:       [],
-  global:         [],
-  fxBase:         null,
-  fxCurr:         null,
-  news:           [],
-  announcements:  [],
-  chart:          [],   // [{open,high,low,close,datetime}]
-  chartSym:       'INFY:NSE',
-  chartName:      'INFOSYS LTD',
-  chartInterval:  { interval: '5min', outputsize: 50, label: '1D' },
+  screener:           [],
+  global:             [],
+  fxBase:             null,
+  fxCurr:             null,
+  news:               [],
+  announcements:      [],
+  chart:              [],   // [{open,high,low,close,datetime}]
+  chartSym:           'INFY:NSE',
+  chartName:          'INFOSYS LTD',
+  chartInterval:      { interval: '5min', outputsize: 50, label: '1D' },
+  // Sector intelligence
+  newsTab:            'market',   // 'market' | 'sector'
+  sectorNews:         [],
+  activeSectorSym:    null,
+  activeSectorLabel:  null,
 };
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -696,7 +934,8 @@ function removeScreenerStock(idx) {
 
 function loadChartFromScreener(sym, label) {
   fetchChartData(sym, label);
-  cmdOut(`Loading chart: <span style="color:#ffdd00">${escHtml(sym)}</span>`);
+  fetchSectorNews(sym, label);
+  cmdOut(`Chart + sector intel: <span style="color:#ffdd00">${escHtml(sym)}</span>`);
 }
 
 // ── SYMBOL NORMALISATION ──────────────────────────────────────────────────────
@@ -859,6 +1098,172 @@ function renderFX() {
   }).join('');
 }
 
+// ── SECTOR NEWS: TAB SWITCH ───────────────────────────────────────────────────
+function switchNewsTab(tab) {
+  state.newsTab = tab;
+  document.getElementById('tab-market').classList.toggle('active', tab === 'market');
+  document.getElementById('tab-sector').classList.toggle('active', tab === 'sector');
+  const ctx = document.getElementById('sector-context');
+  if (tab === 'sector') {
+    ctx.style.display = state.activeSectorLabel ? 'block' : 'none';
+    renderSectorNews();
+    document.getElementById('news-badge').textContent = state.sectorNews.length
+      ? state.sectorNews.length + ' ITEMS' : '--';
+  } else {
+    ctx.style.display = 'none';
+    renderNews();
+    document.getElementById('news-badge').textContent = state.news.length
+      ? state.news.length + ' ITEMS' : 'LOADING...';
+  }
+}
+
+// ── SECTOR NEWS: FETCH ────────────────────────────────────────────────────────
+async function fetchSectorNews(sym, label) {
+  // Immediately switch tab and show loading state
+  state.newsTab         = 'sector';
+  state.activeSectorSym   = sym;
+  state.activeSectorLabel = label;
+  document.getElementById('tab-market').classList.remove('active');
+  document.getElementById('tab-sector').classList.add('active');
+  document.getElementById('sector-tab-label').textContent = label;
+
+  const profile   = SECTOR_MAP[label.toUpperCase()]
+                 || SECTOR_MAP[sym.replace(/:NSE|:BSE|\.NS|\.BO/g, '')]
+                 || null;
+
+  // Update the context bar below tabs
+  const ctx = document.getElementById('sector-context');
+  if (profile) {
+    document.getElementById('sec-name-label').textContent = '▶ ' + profile.sector + '  ';
+    document.getElementById('sec-geo-label').textContent  =
+      '· ' + profile.geo.replace(/['"()]/g, '').replace(/ OR /g, ' · ').slice(0, 80);
+    ctx.style.display = 'block';
+  } else {
+    ctx.style.display = 'none';
+  }
+
+  document.getElementById('news-feed').innerHTML =
+    `<div class="loading">Loading sector intelligence for ${escHtml(label)}…</div>`;
+  document.getElementById('news-badge').textContent = '…';
+
+  const items = [];
+
+  // ── 1. NewsAPI — broad sector + geo query across all sources ──────────────
+  try {
+    const baseQ = profile ? `${label} ${profile.q}` : label;
+    const geoQ  = profile?.geo || '';
+    const fullQ = geoQ ? `(${baseQ}) OR (${geoQ})` : baseQ;
+    const res = await fetch(
+      `https://newsapi.org/v2/everything?q=${encodeURIComponent(fullQ)}&language=en&pageSize=12&sortBy=publishedAt&apiKey=${KEYS.NEWS}`
+    );
+    const data = await res.json();
+    if (data.articles) {
+      const INTL_MARKS = ['BLOOMBERG','REUTERS','WALL STREET','WSJ','FINANCIAL TIMES',
+        'THE ECONOMIST','MARKETWATCH','CNBC','FORTUNE','BUSINESS INSIDER',"BARRON'S",'BBC'];
+      data.articles.forEach(a => {
+        if (!a.title || a.title === '[Removed]') return;
+        const srcRaw = (a.source?.name || 'NEWS').toUpperCase();
+        const isIntl = INTL_MARKS.some(m => srcRaw.includes(m));
+        items.push({
+          ts:   fmtISTTime(a.publishedAt),
+          src:  srcRaw.slice(0, 20),
+          hl:   a.title.replace(/ - [^-]+$/, ''),
+          url:  a.url || '#',
+          intl: isIntl,
+        });
+      });
+    }
+  } catch(e) { console.log('Sector NewsAPI:', e.message); }
+
+  // ── 2. Finnhub company news — last 14 days ────────────────────────────────
+  try {
+    const today  = new Date();
+    const fromDt = new Date(today); fromDt.setDate(fromDt.getDate() - 14);
+    const finnSym = isNSE(sym)
+      ? sym.replace(':NSE', '.NS').replace(':BSE', '.BO')
+      : sym;
+    const res = await fetch(
+      `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(finnSym)}` +
+      `&from=${fromDt.toISOString().slice(0, 10)}&to=${today.toISOString().slice(0, 10)}` +
+      `&token=${KEYS.FINNHUB}`
+    );
+    const articles = await res.json();
+    if (Array.isArray(articles)) {
+      const INTL_MARKS = ['BLOOMBERG','REUTERS','WSJ','FT.COM','CNBC','MARKETWATCH'];
+      articles.slice(0, 10).forEach(a => {
+        if (!a.headline) return;
+        const srcRaw = (a.source || 'FINNHUB').toUpperCase().slice(0, 20);
+        items.push({
+          ts:   new Date(a.datetime * 1000).toLocaleTimeString('en-IN',
+                  { timeZone:'Asia/Kolkata', hour12:false, hour:'2-digit', minute:'2-digit' }),
+          src:  srcRaw,
+          hl:   a.headline,
+          url:  a.url || '#',
+          intl: INTL_MARKS.some(m => srcRaw.includes(m)),
+        });
+      });
+    }
+  } catch(e) { console.log('Sector Finnhub news:', e.message); }
+
+  // ── 3. National RSS — ET / LiveMint / MoneyControl filtered by sector ─────
+  const rssItems = [];
+  await fetchRSS('https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', 'ET MARKETS', rssItems, 20);
+  await fetchRSS('https://www.livemint.com/rss/markets',                                'LIVEMINT',   rssItems, 15);
+  await fetchRSS('https://www.moneycontrol.com/rss/MCtopnews.xml',                      'MONEYCTRL',  rssItems, 15);
+
+  // Build keyword set from profile for RSS filtering
+  const kwSet = profile
+    ? profile.q.toLowerCase().replace(/["()]/g, '').split(/\s+/).filter(w => w.length > 4)
+    : [];
+  kwSet.push(label.toLowerCase()); // always match the company name itself
+
+  rssItems
+    .filter(it => kwSet.some(kw => it.hl.toLowerCase().includes(kw)))
+    .slice(0, 12)
+    .forEach(it => items.push({ ...it, intl: false }));
+
+  // ── 4. Reuters RSS (international sector news) ────────────────────────────
+  if (profile?.intl) {
+    const reutersItems = [];
+    await fetchRSS('https://feeds.reuters.com/reuters/businessNews', 'REUTERS', reutersItems, 12);
+    reutersItems
+      .filter(it => kwSet.some(kw => it.hl.toLowerCase().includes(kw)))
+      .slice(0, 6)
+      .forEach(it => items.push({ ...it, intl: true }));
+  }
+
+  // Deduplicate and save
+  const seen = new Set();
+  state.sectorNews = items.filter(n => {
+    const key = n.hl.slice(0, 60);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 30);
+
+  renderSectorNews();
+  document.getElementById('news-badge').textContent = state.sectorNews.length + ' ITEMS';
+}
+
+// ── SECTOR NEWS: RENDER ───────────────────────────────────────────────────────
+function renderSectorNews() {
+  const feed = document.getElementById('news-feed');
+  if (!state.activeSectorLabel) {
+    feed.innerHTML = `<div class="neu" style="padding:8px 4px;font-size:11px">Click any stock in the screener to load sector intelligence</div>`;
+    return;
+  }
+  if (!state.sectorNews.length) {
+    feed.innerHTML = `<div class="loading">No sector news found for ${escHtml(state.activeSectorLabel)}</div>`;
+    return;
+  }
+  feed.innerHTML = state.sectorNews.map(n => `
+    <div class="news-item" onclick="window.open('${escHtml(n.url)}','_blank')">
+      <span class="ts">${n.ts}</span>
+      <span class="${n.intl ? 'intl-src' : 'src'}"> [${escHtml(n.src)}]</span>
+      <span class="hl">${escHtml(n.hl)}</span>
+    </div>`).join('');
+}
+
 // ── FETCH: NEWS (screener-focused) ────────────────────────────────────────────
 function getScreenerKeywords() {
   if (!state.screener.length) return null;
@@ -910,8 +1315,11 @@ async function fetchNews() {
     return true;
   }).slice(0, 30);
 
-  renderNews();
-  document.getElementById('news-badge').textContent = state.news.length + ' ITEMS';
+  // Only update the DOM if the market tab is currently active
+  if (state.newsTab === 'market') {
+    renderNews();
+    document.getElementById('news-badge').textContent = state.news.length + ' ITEMS';
+  }
 }
 
 async function fetchRSS(feedUrl, source, arr, count = 8) {
@@ -958,7 +1366,7 @@ async function fetchAnnouncements() {
   const items  = [];
   const labels = state.screener.map(s => s.label.toUpperCase());
 
-  // BSE RSS
+  // ── BSE Corporate Announcements RSS ───────────────────────────────────────
   try {
     const bseUrl = 'https://www.bseindia.com/Rssfeed/RSS_Feed_Corporate_Announcements.aspx';
     const url    = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(bseUrl)}&api_key=${KEYS.RSS}&count=50`;
@@ -971,40 +1379,68 @@ async function fetchAnnouncements() {
           items.push({
             ts:  fmtISTTime(it.pubDate),
             co:  detectCompany(it.title, labels),
-            hl:  it.title.replace(/\s+/g, ' ').trim(),
+            hl:  '[BSE] ' + it.title.replace(/\s+/g, ' ').trim(),
             url: it.link || '#'
           });
         });
     }
   } catch (e) { console.log('BSE Announcements RSS:', e.message); }
 
-  // Finnhub company-news for non-NSE screener stocks
+  // ── NSE / Business Standard Corporate News RSS ─────────────────────────────
+  try {
+    const bsUrl = 'https://www.business-standard.com/rss/companies-101.rss';
+    const url   = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(bsUrl)}&api_key=${KEYS.RSS}&count=30`;
+    const res   = await fetch(url);
+    const data  = await res.json();
+    if (data.items) {
+      data.items
+        .filter(it => labels.some(l => (it.title || '').toUpperCase().includes(l)))
+        .forEach(it => {
+          items.push({
+            ts:  fmtISTTime(it.pubDate),
+            co:  detectCompany(it.title, labels),
+            hl:  '[NSE/BSE] ' + it.title.replace(/\s+/g, ' ').trim(),
+            url: it.link || '#'
+          });
+        });
+    }
+  } catch (e) { console.log('Business Standard RSS:', e.message); }
+
+  // ── Finnhub company-news — ALL screener stocks (NSE converted to .NS) ──────
   const today   = new Date();
   const fromDt  = new Date(today); fromDt.setDate(fromDt.getDate() - 30);
   const fromStr = fromDt.toISOString().slice(0, 10);
   const toStr   = today.toISOString().slice(0, 10);
 
   await Promise.all(
-    state.screener.filter(s => !isNSE(s.sym)).map(s =>
-      fetch(`https://finnhub.io/api/v1/company-news?symbol=${s.sym}&from=${fromStr}&to=${toStr}&token=${KEYS.FINNHUB}`)
+    state.screener.map(s => {
+      // Convert :NSE → .NS  /  :BSE → .BO so Finnhub recognises Indian symbols
+      const finnSym = isNSE(s.sym)
+        ? s.sym.replace(':NSE', '.NS').replace(':BSE', '.BO')
+        : s.sym;
+      return fetch(
+        `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(finnSym)}` +
+        `&from=${fromStr}&to=${toStr}&token=${KEYS.FINNHUB}`
+      )
         .then(r => r.json())
         .then(articles => {
           if (!Array.isArray(articles)) return;
           articles
-            .filter(a => a.category === 'company news' || a.category === 'earnings')
+            .filter(a => !a.category || ['company news','earnings','general'].includes(a.category))
             .slice(0, 5)
             .forEach(a => {
+              if (!a.headline) return;
               items.push({
                 ts:  new Date(a.datetime * 1000).toLocaleTimeString('en-IN',
                        { timeZone: 'Asia/Kolkata', hour12: false, hour: '2-digit', minute: '2-digit' }),
                 co:  s.label,
-                hl:  a.headline || '',
+                hl:  a.headline,
                 url: a.url || '#'
               });
             });
         })
-        .catch(() => {})
-    )
+        .catch(() => {});
+    })
   );
 
   const seen = new Set();

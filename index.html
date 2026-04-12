@@ -101,6 +101,21 @@
     .sr-item .sr-desc { color: #ff8c00; font-size: 10px; }
     .sr-item .sr-exch { color: #555; font-size: 10px; }
     .sr-searching { padding: 8px; color: #555; font-size: 11px; text-align: center; }
+    /* Dual-action area inside each search result */
+    .sr-actions { display: flex; gap: 3px; align-items: center; flex-shrink: 0; }
+    .sr-add-w, .sr-add-g {
+      background: transparent;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 1px 5px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sr-add-w { color: #00ff41; border: 1px solid #003300; }
+    .sr-add-w:hover { background: #001a00; }
+    .sr-add-g { color: #00bcd4; border: 1px solid #003344; }
+    .sr-add-g:hover { background: #001122; }
 
     /* ── NAV BAR ── */
     #navbar {
@@ -438,12 +453,15 @@
   <div class="panel">
     <div class="panel-header">
       <span>GLOBAL MARKETS</span>
-      <span class="neu" style="font-size:10px">NYSE · NASDAQ</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="neu" style="font-size:9px">NYSE · NASDAQ</span>
+        <button id="btn-add-global" onclick="focusSearch()" title="Search a symbol then click ＋ GLOBAL" style="background:transparent;border:1px solid rgba(255,140,0,0.6);color:#ff8c00;font-family:inherit;font-size:10px;padding:1px 6px;cursor:pointer">＋ ADD</button>
+      </div>
     </div>
     <div class="panel-body">
       <table>
-        <thead><tr><th>SYMBOL</th><th>PRICE ($)</th><th>CHG</th><th>%CHG</th></tr></thead>
-        <tbody id="tbl-global"><tr><td colspan="4" class="loading">Fetching...</td></tr></tbody>
+        <thead><tr><th>SYMBOL</th><th>PRICE ($)</th><th>CHG</th><th>%CHG</th><th></th></tr></thead>
+        <tbody id="tbl-global"><tr><td colspan="5" class="loading">Fetching...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -525,7 +543,7 @@ const DEFAULT_SCREENER = [
   { sym: 'BAJFINANCE:NSE',label:'BAJFINANCE'},
 ];
 
-const GLOBAL_STOCKS = [
+const DEFAULT_GLOBAL_STOCKS = [
   { sym: 'AAPL',  label: 'APPLE'  },
   { sym: 'MSFT',  label: 'MSFT'   },
   { sym: 'NVDA',  label: 'NVIDIA' },
@@ -749,6 +767,8 @@ const state = {
   chartSym:           'INFY:NSE',
   chartName:          'INFOSYS LTD',
   chartInterval:      { interval: '5min', outputsize: 50, label: '1D' },
+  // User-editable global markets list (persisted to localStorage)
+  globalList:         [],
   // Sector intelligence
   newsTab:            'market',   // 'market' | 'sector'
   sectorNews:         [],
@@ -799,6 +819,50 @@ function saveScreenerToStorage() {
     localStorage.setItem('screener_symbols',
       JSON.stringify(state.screener.map(s => ({ sym: s.sym, label: s.label }))));
   } catch (e) {}
+}
+
+// ── GLOBAL LIST: LOCALSTORAGE ─────────────────────────────────────────────────
+function loadGlobalFromStorage() {
+  try {
+    const raw = localStorage.getItem('global_symbols');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return DEFAULT_GLOBAL_STOCKS.map(s => ({ ...s }));
+}
+function saveGlobalToStorage() {
+  try {
+    localStorage.setItem('global_symbols',
+      JSON.stringify(state.globalList.map(s => ({ sym: s.sym, label: s.label }))));
+  } catch (e) {}
+}
+
+// ── GLOBAL LIST: ADD / REMOVE ─────────────────────────────────────────────────
+function addToGlobal(sym, label) {
+  if (state.globalList.some(s => s.sym === sym)) {
+    cmdOut(`<span class="neu">${escHtml(label)} already in Global Markets</span>`);
+    return false;
+  }
+  state.globalList.push({ sym, label });
+  saveGlobalToStorage();
+  fetchGlobalStocks();
+  return true;
+}
+
+function removeGlobalStock(sym) {
+  state.globalList = state.globalList.filter(s => s.sym !== sym);
+  state.global     = state.global.filter(s => s.sym !== sym);
+  saveGlobalToStorage();
+  renderGlobal();
+  buildTicker();
+}
+
+function addToGlobalFromSearch(sym, label) {
+  const added = addToGlobal(sym, label);
+  if (added) cmdOut(`<span style="color:#00bcd4">Added ${escHtml(label)} to Global Markets</span>`);
+  clearSearch();
 }
 
 // ── CLOCK & MARKET STATUS ─────────────────────────────────────────────────────
@@ -1017,11 +1081,23 @@ function renderDropdown(results) {
   if (!results.length) { hideDropdown(); return; }
   searchDropdown.innerHTML = results.map(r => {
     const { sym, label } = normalizeSymbol(r.symbol, r.description);
-    const inScreener = state.screener.some(s => s.sym === sym);
+    const inScreener = state.screener.some(s  => s.sym === sym);
+    const inGlobal   = state.globalList.some(s => s.sym === sym);
+    // Build the two action widgets
+    const watchBtn = inScreener
+      ? `<span class="sr-chk">✓ WATCH</span>`
+      : `<button class="sr-add-w"
+           onclick="selectResult('${escHtml(sym)}','${escHtml(label)}','${escHtml(r.description)}');event.stopPropagation()"
+           title="Add to Watchlist">＋ WATCH</button>`;
+    const globalBtn = inGlobal
+      ? `<span class="sr-chk" style="color:#00bcd4">✓ GLOBAL</span>`
+      : `<button class="sr-add-g"
+           onclick="addToGlobalFromSearch('${escHtml(sym)}','${escHtml(label)}');event.stopPropagation()"
+           title="Add to Global Markets">＋ GLOBAL</button>`;
     return `<div class="sr-item" onclick="selectResult('${escHtml(sym)}','${escHtml(label)}','${escHtml(r.description)}')">
       <div class="sr-top">
         <span class="sr-sym">${escHtml(sym)}</span>
-        <span class="${inScreener ? 'sr-chk' : 'sr-add'}">${inScreener ? '✓ IN SCREENER' : '＋ ADD'}</span>
+        <div class="sr-actions">${watchBtn}${globalBtn}</div>
       </div>
       <span class="sr-desc">${escHtml((r.description || '').slice(0, 45))}</span>
       <span class="sr-exch">${escHtml(r.displaySymbol)} · ${escHtml(r.type || 'EQUITY')}</span>
@@ -1038,9 +1114,10 @@ function selectResult(sym, label, description) {
 
 // ── FETCH: GLOBAL STOCKS ──────────────────────────────────────────────────────
 async function fetchGlobalStocks() {
+  if (!state.globalList.length) { state.global = []; renderGlobal(); return; }
   try {
     const results = await Promise.all(
-      GLOBAL_STOCKS.map(s =>
+      state.globalList.map(s =>
         fetch(`https://finnhub.io/api/v1/quote?symbol=${s.sym}&token=${KEYS.FINNHUB}`)
           .then(r => r.json())
           .then(d => ({ ...s, price: d.c, change: d.d, pct: d.dp, error: !(d.c > 0) }))
@@ -1055,15 +1132,22 @@ async function fetchGlobalStocks() {
 
 function renderGlobal() {
   const tb = document.getElementById('tbl-global');
+  if (!state.globalList.length) {
+    tb.innerHTML = `<tr><td colspan="5" class="neu" style="padding:8px 4px">No stocks. Search a symbol and click ＋ GLOBAL, or type GL AAPL in CMD.</td></tr>`;
+    return;
+  }
   if (!state.global.length) {
-    tb.innerHTML = `<tr><td colspan="4" class="neu">No data (market may be closed)</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="5" class="neu">No data (market may be closed)</td></tr>`;
     return;
   }
   tb.innerHTML = state.global.map(s => `
-    <tr><td class="sym-col">${s.label}</td>
-    <td>$${fmt(s.price)}</td>
-    <td class="${clsChg(s.change)}">${arrow(s.change)} ${fmt(Math.abs(s.change))}</td>
-    <td class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</td></tr>`
+    <tr>
+      <td class="sym-col">${s.label}</td>
+      <td>$${fmt(s.price)}</td>
+      <td class="${clsChg(s.change)}">${arrow(s.change)} ${fmt(Math.abs(s.change))}</td>
+      <td class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</td>
+      <td><button class="screener-remove" onclick="removeGlobalStock('${escHtml(s.sym)}')" title="Remove from Global">✕</button></td>
+    </tr>`
   ).join('');
 }
 
@@ -1674,7 +1758,7 @@ function buildTicker() {
 }
 
 // ── COMMAND LINE ──────────────────────────────────────────────────────────────
-const HELP_HTML = `<span class="neu">HELP | CLEAR | &lt;SYM&gt; e.g. INFY:NSE · TCS:NSE · AAPL · MSFT</span>`;
+const HELP_HTML = `<span class="neu">HELP | CLEAR | &lt;SYM&gt; — lookup/chart &nbsp;|&nbsp; GL &lt;SYM&gt; — add to Global &nbsp;|&nbsp; GL -&lt;SYM&gt; — remove from Global</span>`;
 
 document.getElementById('cmd-input').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
@@ -1684,6 +1768,30 @@ document.getElementById('cmd-input').addEventListener('keydown', e => {
 
   if (raw === 'HELP')  { cmdOut(HELP_HTML); return; }
   if (raw === 'CLEAR') { cmdOut(''); return; }
+
+  // ── GL <SYM>  /  GL -<SYM>  — Global Markets add/remove ──────────────────
+  if (raw.startsWith('GL ') || raw === 'GL') {
+    const arg = raw.slice(3).trim();
+    if (!arg) { cmdOut(`<span class="neu">Usage: GL AAPL · GL -AAPL (remove)</span>`); return; }
+    const isRemove = arg.startsWith('-');
+    const sym = isRemove ? arg.slice(1).trim() : arg;
+    if (!sym) { cmdOut(`<span class="neu">Usage: GL AAPL · GL -AAPL (remove)</span>`); return; }
+    if (isRemove) {
+      const found = state.globalList.find(s => s.sym === sym || s.label === sym);
+      if (found) {
+        removeGlobalStock(found.sym);
+        cmdOut(`<span class="neu">Removed ${escHtml(sym)} from Global Markets</span>`);
+      } else {
+        cmdOut(`<span class="dn">${escHtml(sym)} not found in Global Markets</span>`);
+      }
+    } else {
+      // Try to resolve label: use sym base as label (strip exchange suffix)
+      const label = sym.split(':')[0];
+      const added = addToGlobal(sym, label);
+      if (added) cmdOut(`<span style="color:#00bcd4">Added ${escHtml(label)} to Global Markets</span>`);
+    }
+    return;
+  }
 
   // Screener lookup
   const sc = state.screener.find(s => s.label === raw || s.sym.split(':')[0] === raw || s.sym === raw);
@@ -1732,7 +1840,8 @@ function setView(v, btn) {
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 async function init() {
-  state.screener = loadScreenerFromStorage();
+  state.screener    = loadScreenerFromStorage();
+  state.globalList  = loadGlobalFromStorage();
   renderScreener();
 
   await Promise.all([fetchScreenerQuotes(), fetchGlobalStocks(), fetchFX()]);

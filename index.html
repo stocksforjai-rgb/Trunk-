@@ -333,6 +333,52 @@
     #sector-context .sec-name { color: #00ff41; }
     #sector-context .sec-geo  { color: #555; }
 
+    /* ── FX CURRENCY SEARCH ── */
+    #fx-search-wrap { position: relative; }
+    #fx-search-input {
+      background: rgba(0,0,0,0.35);
+      border: 1px solid #333;
+      border-radius: 2px;
+      color: #ffdd00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 1px 6px;
+      width: 82px;
+      outline: none;
+      caret-color: #ff8c00;
+    }
+    #fx-search-input::placeholder { color: #444; }
+    #fx-search-input:focus { border-color: #ff8c00; }
+    #fx-search-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      width: 210px;
+      background: #0a0a00;
+      border: 1px solid #ff8c00;
+      z-index: 9999;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.9);
+    }
+    #fx-search-dropdown::-webkit-scrollbar { width: 4px; }
+    #fx-search-dropdown::-webkit-scrollbar-thumb { background: #ff8c00; }
+    .fx-sr-item {
+      padding: 5px 8px;
+      cursor: pointer;
+      border-bottom: 1px solid #1a1a00;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+    }
+    .fx-sr-item:hover { background: #1a1a00; }
+    .fx-sr-code { color: #ffdd00; font-weight: bold; font-size: 11px; flex-shrink: 0; }
+    .fx-sr-name { color: #888; font-size: 10px; text-align: right; }
+    .fx-sr-chk  { color: #555; font-size: 10px; }
+
     /* ── STATUS DOTS ── */
     .dot-open  { color: #00ff41; }
     .dot-close { color: #ff3333; }
@@ -470,12 +516,19 @@
   <div class="panel">
     <div class="panel-header">
       <span>FX RATES  ·  INR BASE</span>
-      <span class="neu" style="font-size:10px">₹ / UNIT</span>
+      <div style="display:flex;gap:5px;align-items:center">
+        <div id="fx-search-wrap">
+          <input id="fx-search-input" type="text" placeholder="＋ ADD CCY"
+            autocomplete="off" spellcheck="false" />
+          <div id="fx-search-dropdown"></div>
+        </div>
+        <span class="neu" style="font-size:10px">₹/UNIT</span>
+      </div>
     </div>
     <div class="panel-body">
       <table>
-        <thead><tr><th>PAIR</th><th>RATE</th><th>SESSION CHG</th></tr></thead>
-        <tbody id="tbl-fx"><tr><td colspan="3" class="loading">Fetching...</td></tr></tbody>
+        <thead><tr><th>PAIR</th><th>RATE (₹)</th><th>SESSION CHG</th><th></th></tr></thead>
+        <tbody id="tbl-fx"><tr><td colspan="4" class="loading">Fetching...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -553,12 +606,51 @@ const DEFAULT_GLOBAL_STOCKS = [
   { sym: 'META',  label: 'META'   },
 ];
 
-// Currencies shown vs INR — "1 FOREIGN = X ₹"
-const FX_CURRENCIES = [
-  { cur: 'USD', d: 2 }, { cur: 'EUR', d: 2 },
-  { cur: 'GBP', d: 2 }, { cur: 'JPY', d: 3 },
-  { cur: 'AUD', d: 2 }, { cur: 'SGD', d: 2 },
-  { cur: 'CNY', d: 2 }, { cur: 'CHF', d: 2 },
+// Default 8 currencies shown vs INR on first load
+const DEFAULT_FX_CURRENCIES = ['USD','EUR','GBP','JPY','AUD','SGD','CNY','CHF'];
+
+// ── MASTER CURRENCY LIST (ISO 4217) — used for the FX search dropdown ─────────
+const FX_ALL_CURRENCIES = [
+  { cur:'USD', name:'US Dollar'             }, { cur:'EUR', name:'Euro'                   },
+  { cur:'GBP', name:'British Pound'         }, { cur:'JPY', name:'Japanese Yen'           },
+  { cur:'AUD', name:'Australian Dollar'     }, { cur:'CAD', name:'Canadian Dollar'        },
+  { cur:'CHF', name:'Swiss Franc'           }, { cur:'CNY', name:'Chinese Yuan (Renminbi)'},
+  { cur:'HKD', name:'Hong Kong Dollar'      }, { cur:'SGD', name:'Singapore Dollar'       },
+  { cur:'NZD', name:'New Zealand Dollar'    }, { cur:'SEK', name:'Swedish Krona'          },
+  { cur:'NOK', name:'Norwegian Krone'       }, { cur:'DKK', name:'Danish Krone'           },
+  { cur:'MXN', name:'Mexican Peso'          }, { cur:'BRL', name:'Brazilian Real'         },
+  { cur:'ZAR', name:'South African Rand'    }, { cur:'RUB', name:'Russian Ruble'          },
+  { cur:'TRY', name:'Turkish Lira'          }, { cur:'KRW', name:'South Korean Won'       },
+  { cur:'THB', name:'Thai Baht'             }, { cur:'IDR', name:'Indonesian Rupiah'      },
+  { cur:'MYR', name:'Malaysian Ringgit'     }, { cur:'PHP', name:'Philippine Peso'        },
+  { cur:'VND', name:'Vietnamese Dong'       }, { cur:'TWD', name:'Taiwan Dollar'          },
+  { cur:'PKR', name:'Pakistani Rupee'       }, { cur:'BDT', name:'Bangladeshi Taka'       },
+  { cur:'LKR', name:'Sri Lankan Rupee'      }, { cur:'NPR', name:'Nepalese Rupee'         },
+  { cur:'MMK', name:'Myanmar Kyat'          }, { cur:'AED', name:'UAE Dirham'             },
+  { cur:'SAR', name:'Saudi Riyal'           }, { cur:'QAR', name:'Qatari Riyal'           },
+  { cur:'KWD', name:'Kuwaiti Dinar'         }, { cur:'BHD', name:'Bahraini Dinar'         },
+  { cur:'OMR', name:'Omani Rial'            }, { cur:'JOD', name:'Jordanian Dinar'        },
+  { cur:'IQD', name:'Iraqi Dinar'           }, { cur:'EGP', name:'Egyptian Pound'         },
+  { cur:'ILS', name:'Israeli Shekel'        }, { cur:'MAD', name:'Moroccan Dirham'        },
+  { cur:'NGN', name:'Nigerian Naira'        }, { cur:'KES', name:'Kenyan Shilling'        },
+  { cur:'GHS', name:'Ghanaian Cedi'         }, { cur:'TZS', name:'Tanzanian Shilling'     },
+  { cur:'UGX', name:'Ugandan Shilling'      }, { cur:'ETB', name:'Ethiopian Birr'         },
+  { cur:'DZD', name:'Algerian Dinar'        }, { cur:'TND', name:'Tunisian Dinar'         },
+  { cur:'PLN', name:'Polish Zloty'          }, { cur:'CZK', name:'Czech Koruna'           },
+  { cur:'HUF', name:'Hungarian Forint'      }, { cur:'RON', name:'Romanian Leu'           },
+  { cur:'BGN', name:'Bulgarian Lev'         }, { cur:'HRK', name:'Croatian Kuna'          },
+  { cur:'RSD', name:'Serbian Dinar'         }, { cur:'UAH', name:'Ukrainian Hryvnia'      },
+  { cur:'ISK', name:'Icelandic Krona'       }, { cur:'CLP', name:'Chilean Peso'           },
+  { cur:'COP', name:'Colombian Peso'        }, { cur:'PEN', name:'Peruvian Sol'           },
+  { cur:'ARS', name:'Argentine Peso'        }, { cur:'BOB', name:'Bolivian Boliviano'     },
+  { cur:'UYU', name:'Uruguayan Peso'        }, { cur:'PYG', name:'Paraguayan Guarani'     },
+  { cur:'VES', name:'Venezuelan Bolivar'    }, { cur:'CRC', name:'Costa Rican Colon'      },
+  { cur:'GTQ', name:'Guatemalan Quetzal'    }, { cur:'HNL', name:'Honduran Lempira'       },
+  { cur:'JMD', name:'Jamaican Dollar'       }, { cur:'TTD', name:'Trinidad & Tobago Dollar'},
+  { cur:'KZT', name:'Kazakhstani Tenge'     }, { cur:'UZS', name:'Uzbekistani Som'        },
+  { cur:'GEL', name:'Georgian Lari'         }, { cur:'AMD', name:'Armenian Dram'          },
+  { cur:'AZN', name:'Azerbaijani Manat'     }, { cur:'BYN', name:'Belarusian Ruble'       },
+  { cur:'MKD', name:'Macedonian Denar'      }, { cur:'ALL', name:'Albanian Lek'           },
 ];
 
 // ── SECTOR INTELLIGENCE MAP ───────────────────────────────────────────────────
@@ -770,6 +862,8 @@ const state = {
   chartInterval:      { interval: '5min', outputsize: 50, label: '1D' },
   // User-editable global markets list (persisted to localStorage)
   globalList:         [],
+  // User-editable FX currency list (persisted to localStorage)
+  fxList:             [],
   // Sector intelligence
   newsTab:            'market',   // 'market' | 'sector'
   sectorNews:         [],
@@ -864,6 +958,47 @@ function addToGlobalFromSearch(sym, label) {
   const added = addToGlobal(sym, label);
   if (added) cmdOut(`<span style="color:#00bcd4">Added ${escHtml(label)} to Global Markets</span>`);
   clearSearch();
+}
+
+// ── FX LIST: LOCALSTORAGE ─────────────────────────────────────────────────────
+function loadFxFromStorage() {
+  try {
+    const raw = localStorage.getItem('fx_currencies');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return DEFAULT_FX_CURRENCIES.map(cur => ({ cur }));
+}
+function saveFxToStorage() {
+  try {
+    localStorage.setItem('fx_currencies', JSON.stringify(state.fxList));
+  } catch (e) {}
+}
+
+// ── FX LIST: ADD / REMOVE ─────────────────────────────────────────────────────
+function addFxCurrency(cur) {
+  const norm = cur.toUpperCase().trim();
+  if (state.fxList.some(c => c.cur === norm)) {
+    cmdOut(`<span class="neu">${escHtml(norm)}/INR already in FX panel</span>`);
+    return false;
+  }
+  state.fxList.push({ cur: norm });
+  saveFxToStorage();
+  renderFX();
+  return true;
+}
+function removeFxCurrency(cur) {
+  state.fxList = state.fxList.filter(c => c.cur !== cur);
+  saveFxToStorage();
+  renderFX();
+}
+function selectFxCurrency(cur) {
+  const added = addFxCurrency(cur);
+  if (added) cmdOut(`<span style="color:#00bcd4">Added ${escHtml(cur)}/INR to FX panel</span>`);
+  document.getElementById('fx-search-input').value = '';
+  document.getElementById('fx-search-dropdown').style.display = 'none';
 }
 
 // ── CLOCK & MARKET STATUS ─────────────────────────────────────────────────────
@@ -1152,6 +1287,47 @@ function renderGlobal() {
   ).join('');
 }
 
+// ── FX SEARCH: EVENT LISTENERS ───────────────────────────────────────────────
+(function () {
+  const inp  = document.getElementById('fx-search-input');
+  const drop = document.getElementById('fx-search-dropdown');
+
+  function renderFxDrop(q) {
+    const upper = q.toUpperCase();
+    const matches = FX_ALL_CURRENCIES.filter(c =>
+      c.cur.startsWith(upper) ||
+      c.name.toUpperCase().includes(upper)
+    ).slice(0, 9);
+    if (!matches.length) { drop.style.display = 'none'; return; }
+    drop.innerHTML = matches.map(c => {
+      const already = state.fxList.some(f => f.cur === c.cur);
+      return `<div class="fx-sr-item" onclick="selectFxCurrency('${escHtml(c.cur)}')">
+        <span class="fx-sr-code">${escHtml(c.cur)}</span>
+        <span class="${already ? 'fx-sr-chk' : 'fx-sr-name'}">${already ? '✓ ADDED' : escHtml(c.name)}</span>
+      </div>`;
+    }).join('');
+    drop.style.display = 'block';
+  }
+
+  inp.addEventListener('input', function () {
+    const q = this.value.trim();
+    if (q.length < 1) { drop.style.display = 'none'; return; }
+    renderFxDrop(q);
+  });
+  inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { drop.style.display = 'none'; this.value = ''; }
+    if (e.key === 'Enter') {
+      const q = this.value.trim().toUpperCase();
+      if (q.length >= 2) selectFxCurrency(q);
+    }
+  });
+  document.addEventListener('click', function (e) {
+    if (!document.getElementById('fx-search-wrap').contains(e.target)) {
+      drop.style.display = 'none';
+    }
+  });
+})();
+
 // ── FETCH: FX ─────────────────────────────────────────────────────────────────
 async function fetchFX() {
   try {
@@ -1167,29 +1343,34 @@ async function fetchFX() {
 
 function renderFX() {
   if (!state.fxCurr) return;
-  // All rates are derived from a USD-base Finnhub response.
-  // Formula: 1 FOREIGN = (INR_rate / FOREIGN_USD_rate) ₹
   const inrCurr = state.fxCurr['INR'];
   const inrBase = state.fxBase ? state.fxBase['INR'] : inrCurr;
   if (!inrCurr) return;
 
   const tb = document.getElementById('tbl-fx');
-  tb.innerHTML = FX_CURRENCIES.map(({ cur, d }) => {
-    // USD is the API base so its "rate" is implicitly 1
+  if (!state.fxList.length) {
+    tb.innerHTML = `<tr><td colspan="4" class="neu" style="padding:8px 4px">No currencies. Type a code above (e.g. USD, GBP).</td></tr>`;
+    return;
+  }
+  tb.innerHTML = state.fxList.map(({ cur }) => {
+    // USD is the API base — its quote divisor is implicitly 1
     const divCurr = cur === 'USD' ? (state.fxCurr['USD'] || 1) : state.fxCurr[cur];
     const divBase = cur === 'USD'
       ? (state.fxBase ? (state.fxBase['USD'] || 1) : 1)
       : (state.fxBase ? state.fxBase[cur] : divCurr);
-    if (!divCurr) return '';
+    if (!divCurr) return `<tr><td class="sym-col">${escHtml(cur)}/INR</td><td colspan="3" class="neu">--</td></tr>`;
     const rate = inrCurr / divCurr;   // ₹ per 1 unit of cur
     const base = inrBase / divBase;
     const chg  = rate - base;
     const pct  = base ? (chg / base) * 100 : 0;
+    // Auto-scale decimal places by magnitude
+    const d = rate >= 10 ? 2 : rate >= 1 ? 3 : rate >= 0.01 ? 4 : 5;
     return `<tr>
-      <td class="sym-col">${cur}/INR</td>
+      <td class="sym-col">${escHtml(cur)}/INR</td>
       <td>₹${fmt(rate, d)}</td>
       <td class="${clsChg(chg)}">${arrow(chg)} ${fmt(Math.abs(chg), d)}
         <span class="neu">(${fmt(Math.abs(pct))}%)</span></td>
+      <td><button class="screener-remove" onclick="removeFxCurrency('${escHtml(cur)}')" title="Remove">✕</button></td>
     </tr>`;
   }).join('');
 }
@@ -1856,6 +2037,7 @@ function setView(v, btn) {
 async function init() {
   state.screener    = loadScreenerFromStorage();
   state.globalList  = loadGlobalFromStorage();
+  state.fxList      = loadFxFromStorage();
   renderScreener();
 
   await Promise.all([fetchScreenerQuotes(), fetchGlobalStocks(), fetchFX()]);

@@ -1407,12 +1407,23 @@ function toYahooSym(sym) {
   return sym; // AAPL, MSFT, 8058.T etc — already Yahoo-compatible
 }
 
+// ── CORS PROXY FOR YAHOO FINANCE ─────────────────────────────────────────────
+// Yahoo Finance blocks browser requests from file:// and localhost origins.
+// Wrap Yahoo URLs through a CORS proxy so data actually loads.
+const CORS_PROXY = 'https://corsproxy.io/?';
+function proxiedUrl(url) {
+  if (url.includes('query1.finance.yahoo.com') || url.includes('query2.finance.yahoo.com')) {
+    return CORS_PROXY + encodeURIComponent(url);
+  }
+  return url;
+}
+
 // ── API FETCH WITH TIMEOUT ────────────────────────────────────────────────────
 // Prevents stalled API calls from hanging the page forever.
 function apiFetch(url, timeoutMs = 8000) {
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), timeoutMs);
-  return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(tid));
+  return fetch(proxiedUrl(url), { signal: ctrl.signal }).finally(() => clearTimeout(tid));
 }
 
 // ── CHART CACHE (localStorage) ────────────────────────────────────────────────
@@ -1940,7 +1951,6 @@ async function fetchNews() {
   items.push(...filtered);
 
   // Include matching global news
-  const keywords = expandedNewsKeywords();
   const matchedGlobal = keywords.length > 0
     ? globalItems.filter(it => keywords.some(k => it.hl.toUpperCase().includes(k)))
     : globalItems.slice(0, 8);

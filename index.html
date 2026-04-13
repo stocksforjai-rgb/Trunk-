@@ -197,17 +197,118 @@
     .neu { color: #888; }
     .sym-col { color: #ffdd00; font-weight: bold; }
 
-    /* ── SCREENER ── */
-    #btn-add-stock {
-      background: transparent;
-      border: 1px solid rgba(255,140,0,0.6);
-      color: #ff8c00;
-      font-family: inherit;
-      font-size: 10px;
-      padding: 1px 6px;
-      cursor: pointer;
+    /* ── GROUPS BAR ── */
+    .groups-bar {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding: 3px 5px;
+      border-top: 1px solid #2a1500;
+      overflow-x: auto;
+      flex-shrink: 0;
+      min-height: 24px;
     }
-    #btn-add-stock:hover { background: #ff8c00; color: #000; }
+    .groups-bar::-webkit-scrollbar { height: 2px; }
+    .groups-bar::-webkit-scrollbar-thumb { background: #ff8c00; }
+    .grp-btn {
+      background: transparent;
+      border: 1px solid rgba(255,140,0,0.4);
+      color: #ff8c00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 9px;
+      font-weight: bold;
+      padding: 1px 5px;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .grp-btn.active { background: #ff8c00; color: #000; }
+    .grp-btn:hover  { background: #ff8c00; color: #000; }
+    .grp-btn .grp-edit-icon {
+      font-size: 8px;
+      opacity: 0.5;
+      transition: opacity 0.1s;
+      line-height: 1;
+    }
+    .grp-btn:hover .grp-edit-icon,
+    .grp-btn.active .grp-edit-icon { opacity: 1; }
+    .grp-add-btn {
+      background: transparent;
+      border: 1px dashed rgba(255,140,0,0.4);
+      color: #ff8c00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      line-height: 1;
+      padding: 0 5px;
+      cursor: pointer;
+      flex-shrink: 0;
+      height: 18px;
+    }
+    .grp-add-btn:hover { border-color: #ff8c00; background: #1a0800; }
+
+    /* ── GROUP EDIT MODAL ── */
+    #grp-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.88);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+    }
+    #grp-modal.open { display: flex; }
+    #grp-modal-box {
+      background: #080600;
+      border: 1px solid #ff8c00;
+      padding: 14px;
+      width: 360px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-family: 'Courier New', Courier, monospace;
+    }
+    #grp-modal-box input[type=text] {
+      background: #0f0c00;
+      border: 1px solid #ff8c00;
+      color: #ff8c00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      padding: 4px 8px;
+      width: 100%;
+      outline: none;
+    }
+    .grp-modal-hdr  { display:flex; justify-content:space-between; align-items:center; }
+    .grp-modal-hdr span { color:#ff8c00; font-weight:bold; font-size:13px; }
+    .grp-modal-hdr button { background:transparent; border:none; color:#ff8c00; font-size:16px; cursor:pointer; }
+    .grp-modal-sub  { color:#666; font-size:10px; margin-bottom:3px; }
+    #grp-modal-stocks { overflow-y:auto; max-height:240px; flex:1; }
+    #grp-modal-stocks::-webkit-scrollbar { width:3px; }
+    #grp-modal-stocks::-webkit-scrollbar-thumb { background:#ff8c00; }
+    .grp-modal-stock-row {
+      display:flex; justify-content:space-between; align-items:center;
+      padding:4px 4px; border-bottom:1px solid #111; font-size:11px; color:#ffdd00;
+    }
+    .grp-modal-stock-row button {
+      background:transparent; border:none; color:#555; font-size:11px; cursor:pointer; padding:0 3px;
+    }
+    .grp-modal-stock-row button:hover { color:#ff3333; }
+    .grp-modal-ftr  { display:flex; justify-content:space-between; gap:8px; }
+    #grp-modal-del  {
+      background:transparent; border:1px solid #ff3333; color:#ff3333;
+      font-family:inherit; font-size:10px; padding:3px 10px; cursor:pointer;
+    }
+    #grp-modal-del:hover { background:#ff3333; color:#000; }
+    #grp-modal-save {
+      background:#ff8c00; border:1px solid #ff8c00; color:#000;
+      font-family:inherit; font-size:10px; font-weight:bold; padding:3px 14px; cursor:pointer; flex:1;
+    }
+    #grp-modal-save:hover { background:#ffaa00; }
+
+    /* ── SCREENER ── */
     .screener-remove {
       background: transparent;
       border: none;
@@ -436,12 +537,12 @@
 
   <!-- Panel 1: STOCK SCREENER (col 1, row 1) -->
   <div class="panel">
-    <div class="panel-header">
-      <span>STOCK SCREENER</span>
-      <div style="display:flex;gap:6px;align-items:center">
+    <div class="panel-header" style="flex-direction:column;align-items:stretch;padding:0;gap:0">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 8px">
+        <span>STOCK SCREENER</span>
         <span id="screener-refresh" class="neu" style="font-size:10px">--</span>
-        <button id="btn-add-stock" onclick="focusSearch()" title="Search and add a stock">＋ ADD</button>
       </div>
+      <div id="screener-groups-bar" class="groups-bar"></div>
     </div>
     <div class="panel-body">
       <table>
@@ -475,12 +576,12 @@
 
   <!-- Panel 3: Global Markets (col 1, row 2) -->
   <div class="panel">
-    <div class="panel-header">
-      <span>GLOBAL MARKETS</span>
-      <div style="display:flex;gap:6px;align-items:center">
+    <div class="panel-header" style="flex-direction:column;align-items:stretch;padding:0;gap:0">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 8px">
+        <span>GLOBAL MARKETS</span>
         <span class="neu" style="font-size:9px">ALL MARKETS</span>
-        <button id="btn-add-global" onclick="focusSearch()" title="Search a symbol then click ＋ GLOBAL" style="background:transparent;border:1px solid rgba(255,140,0,0.6);color:#ff8c00;font-family:inherit;font-size:10px;padding:1px 6px;cursor:pointer">＋ ADD</button>
       </div>
+      <div id="global-groups-bar" class="groups-bar"></div>
     </div>
     <div class="panel-body">
       <table>
@@ -542,6 +643,28 @@
     </div>
   </div>
 
+</div>
+
+<!-- GROUP EDIT MODAL -->
+<div id="grp-modal" onclick="if(event.target===this)closeGrpModal()">
+  <div id="grp-modal-box">
+    <div class="grp-modal-hdr">
+      <span id="grp-modal-title">EDIT GROUP</span>
+      <button onclick="closeGrpModal()">✕</button>
+    </div>
+    <div>
+      <div class="grp-modal-sub">GROUP NAME</div>
+      <input id="grp-modal-name" type="text" spellcheck="false" autocomplete="off" />
+    </div>
+    <div>
+      <div class="grp-modal-sub">STOCKS IN GROUP <span id="grp-modal-count" style="color:#555"></span></div>
+      <div id="grp-modal-stocks"></div>
+    </div>
+    <div class="grp-modal-ftr">
+      <button id="grp-modal-del" onclick="deleteGrpFromModal()">DELETE GROUP</button>
+      <button id="grp-modal-save" onclick="saveGrpModal()">SAVE</button>
+    </div>
+  </div>
 </div>
 
 <!-- COMMAND LINE -->
@@ -828,25 +951,27 @@ const SECTOR_MAP = {
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 const state = {
-  screener:           [],
-  global:             [],
-  fxBase:             null,
-  fxCurr:             null,
-  news:               [],
-  announcements:      [],
-  chart:              [],   // [{open,high,low,close,datetime}]
-  chartSym:           'INFY:NSE',
-  chartName:          'INFOSYS LTD',
-  chartInterval:      { interval: '5min', outputsize: 50, label: '1D' },
-  // User-editable global markets list (persisted to localStorage)
-  globalList:         [],
-  // User-editable FX currency list (persisted to localStorage)
-  fxList:             [],
-  // Sector intelligence
-  newsTab:            'market',   // 'market' | 'sector'
-  sectorNews:         [],
-  activeSectorSym:    null,
-  activeSectorLabel:  null,
+  screener:              [],
+  global:                [],
+  fxBase:                null,
+  fxCurr:                null,
+  news:                  [],
+  announcements:         [],
+  chart:                 [],
+  chartSym:              'INFY:NSE',
+  chartName:             'INFOSYS LTD',
+  chartInterval:         { interval: '5min', outputsize: 50, label: '1D' },
+  globalList:            [],
+  fxList:                [],
+  newsTab:               'market',
+  sectorNews:            [],
+  activeSectorSym:       null,
+  activeSectorLabel:     null,
+  // Groups
+  screenerGroups:        [],
+  activeScreenerGrpId:   null,
+  globalGroups:          [],
+  activeGlobalGrpId:     null,
 };
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -912,6 +1037,195 @@ function saveGlobalToStorage() {
   } catch (e) {}
 }
 
+// ── GROUPS: SHARED HELPERS ────────────────────────────────────────────────────
+function newGrpId() { return 'g' + Date.now() + Math.random().toString(36).slice(2,6); }
+
+// ── GROUPS: SCREENER ──────────────────────────────────────────────────────────
+function loadScreenerGroups() {
+  try {
+    const raw = localStorage.getItem('screener_groups');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    }
+  } catch(e) {}
+  // Migrate from old flat screener list → single default group
+  const legacy = loadScreenerFromStorage();
+  return [{ id: newGrpId(), name: 'DEFAULT', stocks: legacy.map(s => ({ sym: s.sym, label: s.label })) }];
+}
+function saveScreenerGroups() {
+  try {
+    localStorage.setItem('screener_groups', JSON.stringify(state.screenerGroups));
+    localStorage.setItem('screener_active_grp', state.activeScreenerGrpId);
+  } catch(e) {}
+}
+function getActiveScreenerGrp() {
+  return state.screenerGroups.find(g => g.id === state.activeScreenerGrpId) || state.screenerGroups[0];
+}
+function syncScreenerGroupStocks() {
+  const grp = getActiveScreenerGrp();
+  if (grp) grp.stocks = state.screener.map(s => ({ sym: s.sym, label: s.label }));
+  saveScreenerGroups();
+}
+function renderScreenerGroups() {
+  const bar = document.getElementById('screener-groups-bar');
+  bar.innerHTML = state.screenerGroups.map(g => {
+    const active = g.id === state.activeScreenerGrpId ? ' active' : '';
+    return `<button class="grp-btn${active}" onclick="switchScreenerGroup('${g.id}')">${escHtml(g.name)}<span class="grp-edit-icon" onclick="openGrpModal('screener','${g.id}');event.stopPropagation()" title="Edit group">⚙</span></button>`;
+  }).join('') + `<button class="grp-add-btn" onclick="addScreenerGroup()" title="New group">＋</button>`;
+}
+function switchScreenerGroup(id) {
+  state.activeScreenerGrpId = id;
+  const grp = getActiveScreenerGrp();
+  state.screener = grp ? grp.stocks.map(s => ({ ...s, isNSE: isNSE(s.sym), error: false })) : [];
+  saveScreenerGroups();
+  renderScreenerGroups();
+  fetchScreenerQuotes();
+  fetchAnnouncements();
+}
+function addScreenerGroup() {
+  const name = prompt('Group name:');
+  if (!name || !name.trim()) return;
+  const grp = { id: newGrpId(), name: name.trim().toUpperCase(), stocks: [] };
+  state.screenerGroups.push(grp);
+  state.activeScreenerGrpId = grp.id;
+  state.screener = [];
+  saveScreenerGroups();
+  renderScreenerGroups();
+  renderScreener();
+}
+
+// ── GROUPS: GLOBAL ────────────────────────────────────────────────────────────
+function loadGlobalGroups() {
+  try {
+    const raw = localStorage.getItem('global_groups');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    }
+  } catch(e) {}
+  const legacy = loadGlobalFromStorage();
+  return [{ id: newGrpId(), name: 'DEFAULT', stocks: legacy.map(s => ({ sym: s.sym, label: s.label })) }];
+}
+function saveGlobalGroups() {
+  try {
+    localStorage.setItem('global_groups', JSON.stringify(state.globalGroups));
+    localStorage.setItem('global_active_grp', state.activeGlobalGrpId);
+  } catch(e) {}
+}
+function getActiveGlobalGrp() {
+  return state.globalGroups.find(g => g.id === state.activeGlobalGrpId) || state.globalGroups[0];
+}
+function syncGlobalGroupStocks() {
+  const grp = getActiveGlobalGrp();
+  if (grp) grp.stocks = state.globalList.map(s => ({ sym: s.sym, label: s.label }));
+  saveGlobalGroups();
+}
+function renderGlobalGroups() {
+  const bar = document.getElementById('global-groups-bar');
+  bar.innerHTML = state.globalGroups.map(g => {
+    const active = g.id === state.activeGlobalGrpId ? ' active' : '';
+    return `<button class="grp-btn${active}" onclick="switchGlobalGroup('${g.id}')">${escHtml(g.name)}<span class="grp-edit-icon" onclick="openGrpModal('global','${g.id}');event.stopPropagation()" title="Edit group">⚙</span></button>`;
+  }).join('') + `<button class="grp-add-btn" onclick="addGlobalGroup()" title="New group">＋</button>`;
+}
+function switchGlobalGroup(id) {
+  state.activeGlobalGrpId = id;
+  const grp = getActiveGlobalGrp();
+  state.globalList = grp ? grp.stocks.map(s => ({ ...s })) : [];
+  state.global = [];
+  saveGlobalGroups();
+  renderGlobalGroups();
+  fetchGlobalStocks();
+}
+function addGlobalGroup() {
+  const name = prompt('Group name:');
+  if (!name || !name.trim()) return;
+  const grp = { id: newGrpId(), name: name.trim().toUpperCase(), stocks: [] };
+  state.globalGroups.push(grp);
+  state.activeGlobalGrpId = grp.id;
+  state.globalList = [];
+  state.global = [];
+  saveGlobalGroups();
+  renderGlobalGroups();
+  renderGlobal();
+}
+
+// ── GROUP EDIT MODAL ──────────────────────────────────────────────────────────
+let _modalType = null;
+let _modalGrpId = null;
+
+function openGrpModal(type, id) {
+  _modalType  = type;
+  _modalGrpId = id;
+  const groups = type === 'screener' ? state.screenerGroups : state.globalGroups;
+  const grp    = groups.find(g => g.id === id);
+  if (!grp) return;
+  document.getElementById('grp-modal-title').textContent = type === 'screener' ? 'EDIT SCREENER GROUP' : 'EDIT GLOBAL GROUP';
+  document.getElementById('grp-modal-name').value = grp.name;
+  renderModalStocks(grp.stocks);
+  // Hide delete button if only one group remains
+  document.getElementById('grp-modal-del').style.display = groups.length <= 1 ? 'none' : '';
+  document.getElementById('grp-modal').classList.add('open');
+}
+function closeGrpModal() {
+  document.getElementById('grp-modal').classList.remove('open');
+  _modalType = null; _modalGrpId = null;
+}
+function renderModalStocks(stocks) {
+  const count = stocks.length;
+  document.getElementById('grp-modal-count').textContent = `(${count})`;
+  document.getElementById('grp-modal-stocks').innerHTML = count === 0
+    ? `<div style="color:#555;font-size:10px;padding:6px 4px">No stocks. Search and click ＋WATCH or ＋GLOBAL to add.</div>`
+    : stocks.map((s, i) => `<div class="grp-modal-stock-row">
+        <span>${escHtml(s.label)} <span style="color:#555;font-size:10px">${escHtml(s.sym)}</span></span>
+        <button onclick="removeStockFromModal(${i})" title="Remove">✕</button>
+      </div>`).join('');
+}
+function removeStockFromModal(idx) {
+  const groups = _modalType === 'screener' ? state.screenerGroups : state.globalGroups;
+  const grp    = groups.find(g => g.id === _modalGrpId);
+  if (!grp) return;
+  grp.stocks.splice(idx, 1);
+  renderModalStocks(grp.stocks);
+  // If editing the active group, sync live state
+  const activeId = _modalType === 'screener' ? state.activeScreenerGrpId : state.activeGlobalGrpId;
+  if (_modalGrpId === activeId) {
+    if (_modalType === 'screener') {
+      state.screener = grp.stocks.map(s => ({ ...s, isNSE: isNSE(s.sym), error: false }));
+      renderScreener();
+    } else {
+      state.globalList = grp.stocks.map(s => ({ ...s }));
+      state.global = state.global.filter(x => grp.stocks.some(s => s.sym === x.sym));
+      renderGlobal();
+    }
+  }
+}
+function saveGrpModal() {
+  const groups = _modalType === 'screener' ? state.screenerGroups : state.globalGroups;
+  const grp    = groups.find(g => g.id === _modalGrpId);
+  if (!grp) return;
+  const newName = document.getElementById('grp-modal-name').value.trim().toUpperCase();
+  if (newName) grp.name = newName;
+  if (_modalType === 'screener') { saveScreenerGroups(); renderScreenerGroups(); }
+  else                           { saveGlobalGroups();   renderGlobalGroups();   }
+  closeGrpModal();
+}
+function deleteGrpFromModal() {
+  const groups = _modalType === 'screener' ? state.screenerGroups : state.globalGroups;
+  if (groups.length <= 1) return;
+  if (!confirm(`Delete group "${groups.find(g=>g.id===_modalGrpId)?.name}"?`)) return;
+  const idx = groups.findIndex(g => g.id === _modalGrpId);
+  groups.splice(idx, 1);
+  closeGrpModal();
+  if (_modalType === 'screener') {
+    state.activeScreenerGrpId = groups[0].id;
+    switchScreenerGroup(groups[0].id);
+  } else {
+    state.activeGlobalGrpId = groups[0].id;
+    switchGlobalGroup(groups[0].id);
+  }
+}
+
 // ── GLOBAL LIST: ADD / REMOVE ─────────────────────────────────────────────────
 function addToGlobal(sym, label) {
   if (state.globalList.some(s => s.sym === sym)) {
@@ -919,7 +1233,7 @@ function addToGlobal(sym, label) {
     return false;
   }
   state.globalList.push({ sym, label });
-  saveGlobalToStorage();
+  syncGlobalGroupStocks();
   fetchGlobalStocks();
   return true;
 }
@@ -927,7 +1241,7 @@ function addToGlobal(sym, label) {
 function removeGlobalStock(sym) {
   state.globalList = state.globalList.filter(s => s.sym !== sym);
   state.global     = state.global.filter(s => s.sym !== sym);
-  saveGlobalToStorage();
+  syncGlobalGroupStocks();
   renderGlobal();
 }
 
@@ -1092,7 +1406,7 @@ function addToScreener(sym, label) {
     return false;
   }
   state.screener.push({ sym, label, error: false, isNSE: isNSE(sym) });
-  saveScreenerToStorage();
+  syncScreenerGroupStocks();
   fetchScreenerQuotes();
   fetchNews();
   fetchAnnouncements();
@@ -1101,7 +1415,7 @@ function addToScreener(sym, label) {
 
 function removeScreenerStock(idx) {
   state.screener.splice(idx, 1);
-  saveScreenerToStorage();
+  syncScreenerGroupStocks();
   renderScreener();
   fetchNews();
   fetchAnnouncements();
@@ -1986,9 +2300,26 @@ function setView(v, btn) {
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 async function init() {
-  state.screener    = loadScreenerFromStorage();
-  state.globalList  = loadGlobalFromStorage();
-  state.fxList      = loadFxFromStorage();
+  // Load screener groups (migrates old flat list on first run)
+  state.screenerGroups = loadScreenerGroups();
+  const savedSGrp = localStorage.getItem('screener_active_grp');
+  state.activeScreenerGrpId = (savedSGrp && state.screenerGroups.some(g => g.id === savedSGrp))
+    ? savedSGrp : state.screenerGroups[0].id;
+  const sGrp = getActiveScreenerGrp();
+  state.screener = sGrp ? sGrp.stocks.map(s => ({ ...s, isNSE: isNSE(s.sym), error: false })) : [];
+
+  // Load global groups (migrates old flat list on first run)
+  state.globalGroups = loadGlobalGroups();
+  const savedGGrp = localStorage.getItem('global_active_grp');
+  state.activeGlobalGrpId = (savedGGrp && state.globalGroups.some(g => g.id === savedGGrp))
+    ? savedGGrp : state.globalGroups[0].id;
+  const gGrp = getActiveGlobalGrp();
+  state.globalList = gGrp ? gGrp.stocks.map(s => ({ ...s })) : [];
+
+  state.fxList = loadFxFromStorage();
+
+  renderScreenerGroups();
+  renderGlobalGroups();
   renderScreener();
 
   await Promise.all([fetchScreenerQuotes(), fetchGlobalStocks(), fetchFX()]);

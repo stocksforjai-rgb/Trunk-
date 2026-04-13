@@ -1420,10 +1420,39 @@ async function fetchScreenerQuotes() {
   });
 
   renderScreener();
+  saveQuoteCache();
   document.getElementById('screener-refresh').textContent = 'UPD ' + istTime();
 }
 
 function isNSE(sym) { return sym.includes(':NSE') || sym.includes(':BSE'); }
+
+// ── PRICE CACHE (localStorage) ────────────────────────────────────────────────
+function saveQuoteCache() {
+  try {
+    localStorage.setItem('quote_cache', JSON.stringify({
+      screener: state.screener.filter(s => !s.error && s.price != null).map(s =>
+        ({ sym: s.sym, label: s.label, price: s.price, change: s.change, pct: s.pct, isNSE: s.isNSE })),
+      global: state.global.filter(s => !s.noData).map(s =>
+        ({ sym: s.sym, label: s.label, price: s.price, change: s.change, pct: s.pct })),
+      ts: Date.now()
+    }));
+  } catch(e) {}
+}
+function loadQuoteCache() {
+  try {
+    const raw = localStorage.getItem('quote_cache');
+    if (!raw) return false;
+    const { screener, global: glob, ts } = JSON.parse(raw);
+    if (Date.now() - ts > 3_600_000) return false;   // stale after 1h
+    state.screener = state.screener.map(s => {
+      const c = (screener || []).find(x => x.sym === s.sym);
+      return c ? { ...s, ...c, error: false } : s;
+    });
+    const validSyms = new Set(state.globalList.map(g => g.sym));
+    state.global = (glob || []).filter(g => validSyms.has(g.sym));
+    return screener?.length > 0 || glob?.length > 0;
+  } catch(e) { return false; }
+}
 
 // ── SCREENER: RENDER ──────────────────────────────────────────────────────────
 function renderScreener() {
@@ -1601,6 +1630,7 @@ async function fetchGlobalStocks() {
     );
     state.global = results;
     renderGlobal();
+    saveQuoteCache();
     } catch (e) { console.warn('Global stocks:', e.message); }
 }
 
@@ -2348,8 +2378,8 @@ function setView(v, btn) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-async function init() {
-  // Load screener groups (migrates old flat list on first run)
+function init() {
+  // ── 1. Restore groups & stock lists from localStorage (synchronous, instant) ─
   state.screenerGroups = loadScreenerGroups();
   const savedSGrp = localStorage.getItem('screener_active_grp');
   state.activeScreenerGrpId = (savedSGrp && state.screenerGroups.some(g => g.id === savedSGrp))
@@ -2357,7 +2387,6 @@ async function init() {
   const sGrp = getActiveScreenerGrp();
   state.screener = sGrp ? sGrp.stocks.map(s => ({ ...s, isNSE: isNSE(s.sym), error: false })) : [];
 
-  // Load global groups (migrates old flat list on first run)
   state.globalGroups = loadGlobalGroups();
   const savedGGrp = localStorage.getItem('global_active_grp');
   state.activeGlobalGrpId = (savedGGrp && state.globalGroups.some(g => g.id === savedGGrp))
@@ -2367,14 +2396,20 @@ async function init() {
 
   state.fxList = loadFxFromStorage();
 
+  // ── 2. Paint the UI immediately using cached prices (page visible in <100ms) ─
+  loadQuoteCache();
   renderScreenerGroups();
   renderGlobalGroups();
   renderScreener();
+  renderGlobal();
 
-  await Promise.all([fetchScreenerQuotes(), fetchGlobalStocks(), fetchFX()]);
-  fetchChartData(state.chartSym, state.chartName);
-  fetchNews();
-  fetchAnnouncements();
+  // ── 3. Refresh data in background — staggered to avoid API rate limits ────────
+  fetchScreenerQuotes();                                             // fires immediately
+  setTimeout(fetchGlobalStocks,                                500); // +0.5s
+  setTimeout(fetchFX,                                         1000); // +1s
+  setTimeout(() => fetchChartData(state.chartSym, state.chartName), 1500); // +1.5s
+  setTimeout(fetchNews,                                       4000); // +4s  (non-critical)
+  setTimeout(fetchAnnouncements,                              6000); // +6s  (non-critical)
 }
 
 // Refresh intervals

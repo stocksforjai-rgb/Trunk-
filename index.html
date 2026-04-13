@@ -571,12 +571,12 @@
         <div id="chart-overlay">Loading chart...</div>
       </div>
       <div id="chart-timerange">
-        <button class="tr-btn active" onclick="setTimeRange('5min',50,'1D',this)">1D</button>
-        <button class="tr-btn" onclick="setTimeRange('1h',120,'1W',this)">1W</button>
-        <button class="tr-btn" onclick="setTimeRange('1day',180,'6M',this)">6M</button>
-        <button class="tr-btn" onclick="setTimeRange('1day',365,'1Y',this)">1Y</button>
-        <button class="tr-btn" onclick="setTimeRange('1week',312,'6Y',this)">6Y</button>
-        <button class="tr-btn" onclick="setTimeRange('1month',2000,'ALL',this)">ALL</button>
+        <button class="tr-btn active" onclick="setTimeRange('5m','1d','1D',this)">1D</button>
+        <button class="tr-btn" onclick="setTimeRange('1h','5d','1W',this)">1W</button>
+        <button class="tr-btn" onclick="setTimeRange('1d','6mo','6M',this)">6M</button>
+        <button class="tr-btn" onclick="setTimeRange('1d','1y','1Y',this)">1Y</button>
+        <button class="tr-btn" onclick="setTimeRange('1wk','5y','6Y',this)">6Y</button>
+        <button class="tr-btn" onclick="setTimeRange('1mo','max','ALL',this)">ALL</button>
       </div>
     </div>
   </div>
@@ -686,10 +686,8 @@
 <script>
 // ── API KEYS ──────────────────────────────────────────────────────────────────
 const KEYS = {
-  TWELVE:  '711fcb89cfb14fc8975dabb81b91496d',
   RSS:     'ih56ukjzcpflcpolpnbl5b2xgeb7fxvokg9oisaf',
   FINNHUB: 'd7cvc5pr01qv03etq8hgd7cvc5pr01qv03etq8i0',
-  NEWS:    '1d14b781f48f4093b8d6e6ca92d092c5'
 };
 
 // ── DEFAULT SCREENER ──────────────────────────────────────────────────────────
@@ -1010,7 +1008,7 @@ const state = {
   chart:                 [],
   chartSym:              'INFY:NSE',
   chartName:             'INFOSYS LTD',
-  chartInterval:         { interval: '5min', outputsize: 50, label: '1D' },
+  chartInterval:         { interval: '5m', range: '1d', label: '1D' },
   globalList:            [],
   fxList:                [],
   newsTab:               'market',
@@ -1375,49 +1373,25 @@ updateClock();
 async function fetchScreenerQuotes() {
   if (!state.screener.length) return;
 
-  const nseSym   = state.screener.filter(s => isNSE(s.sym));
-  const otherSym = state.screener.filter(s => !isNSE(s.sym));
-
-  // Twelve Data batch for NSE
-  let nseData = {};
-  if (nseSym.length) {
+  // Yahoo Finance for all screener stocks — parallel, no API key, no rate limit
+  await Promise.all(state.screener.map(async s => {
     try {
-      const symsStr = nseSym.map(s => s.sym).join(',');
-      const res = await apiFetch(
-        `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symsStr)}&apikey=${KEYS.TWELVE}`
-      );
-      const raw = await res.json();
-      if (nseSym.length === 1) {
-        // Single symbol: response is the object directly
-        nseData[nseSym[0].sym] = raw;
+      const ySym = toYahooSym(s.sym);
+      const url  = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=1d&range=5d&includePrePost=false`;
+      const res  = await apiFetch(url);
+      const data = await res.json();
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta?.regularMarketPrice) {
+        const price  = meta.regularMarketPrice;
+        const prev   = meta.chartPreviousClose || meta.previousClose || price;
+        const change = parseFloat((price - prev).toFixed(2));
+        const pct    = prev > 0 ? parseFloat(((change / prev) * 100).toFixed(2)) : 0;
+        Object.assign(s, { price, change, pct, error: false });
       } else {
-        nseData = raw;
+        s.error = true;
       }
-    } catch (e) { console.warn('Twelve Data screener:', e.message); }
-  }
-
-  // Finnhub for non-NSE
-  const finnData = {};
-  if (otherSym.length) {
-    await Promise.all(otherSym.map(s =>
-      apiFetch(`https://finnhub.io/api/v1/quote?symbol=${s.sym}&token=${KEYS.FINNHUB}`)
-        .then(r => r.json())
-        .then(d => { finnData[s.sym] = d; })
-        .catch(() => {})
-    ));
-  }
-
-  state.screener = state.screener.map(s => {
-    if (isNSE(s.sym)) {
-      const d = nseData[s.sym];
-      if (!d || d.status === 'error' || !d.close) return { ...s, error: true };
-      return { ...s, price: parseFloat(d.close), change: parseFloat(d.change), pct: parseFloat(d.percent_change), error: false, isNSE: true };
-    } else {
-      const d = finnData[s.sym];
-      if (!d || !(d.c > 0)) return { ...s, error: true };
-      return { ...s, price: d.c, change: d.d, pct: d.dp, error: false, isNSE: false };
-    }
-  });
+    } catch(e) { s.error = true; }
+  }));
 
   renderScreener();
   saveQuoteCache();
@@ -1425,6 +1399,13 @@ async function fetchScreenerQuotes() {
 }
 
 function isNSE(sym) { return sym.includes(':NSE') || sym.includes(':BSE'); }
+
+// Convert internal symbol format to Yahoo Finance format
+function toYahooSym(sym) {
+  if (sym.includes(':NSE')) return sym.replace(':NSE', '.NS');
+  if (sym.includes(':BSE')) return sym.replace(':BSE', '.BO');
+  return sym; // AAPL, MSFT, 8058.T etc — already Yahoo-compatible
+}
 
 // ── API FETCH WITH TIMEOUT ────────────────────────────────────────────────────
 // Prevents stalled API calls from hanging the page forever.
@@ -2148,12 +2129,14 @@ function renderAnnouncements() {
 
 // ── FETCH: CHART DATA (OHLC) ──────────────────────────────────────────────────
 async function fetchChartData(symbol, name) {
-  const overlay = document.getElementById('chart-overlay');
-  const { interval, outputsize, label: rangeLabel } = state.chartInterval;
-  const sym0 = symbol.split(':')[0];
+  const overlay  = document.getElementById('chart-overlay');
+  const { interval, range, label: rangeLabel } = state.chartInterval;
+  const sym0     = symbol.split(':')[0];
+  const ySym     = toYahooSym(symbol);
+  const cacheKey = interval + '_' + range;
 
   // Show cached chart immediately — page feels instant
-  const cached = loadChartCache(symbol, interval);
+  const cached = loadChartCache(symbol, cacheKey);
   if (cached && cached.length > 0) {
     state.chart     = cached;
     state.chartSym  = symbol;
@@ -2166,30 +2149,35 @@ async function fetchChartData(symbol, name) {
     overlay.textContent   = 'Loading ' + symbol + '...';
   }
 
-  // Fetch fresh data in background — 8 s timeout so it never hangs
+  // Fetch fresh OHLC from Yahoo Finance — 8s timeout, never hangs
   try {
-    const url  = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${KEYS.TWELVE}`;
+    const url  = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=${interval}&range=${range}&includePrePost=false`;
     const res  = await apiFetch(url);
     const data = await res.json();
-    if (data.values && data.values.length > 0) {
-      const ohlc = data.values.slice().reverse().map(v => ({
-        open: parseFloat(v.open), high: parseFloat(v.high),
-        low:  parseFloat(v.low),  close: parseFloat(v.close),
-        datetime: v.datetime,
-      }));
+    const result = data?.chart?.result?.[0];
+    if (result?.timestamp?.length) {
+      const ts = result.timestamp;
+      const q  = result.indicators.quote[0];
+      const ohlc = ts.map((t, i) => ({
+        open:     q.open[i],
+        high:     q.high[i],
+        low:      q.low[i],
+        close:    q.close[i],
+        datetime: new Date(t * 1000).toISOString(),
+      })).filter(c => c.close != null && c.open != null);
       state.chart     = ohlc;
       state.chartSym  = symbol;
       state.chartName = name || sym0;
-      saveChartCache(symbol, interval, ohlc);
+      saveChartCache(symbol, cacheKey, ohlc);
       document.getElementById('chart-title').textContent = `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
       overlay.style.display = 'none';
       drawChart();
     } else if (!cached) {
-      overlay.textContent = (data.message || 'No data') + ' · market may be closed';
+      overlay.textContent = (data?.chart?.error?.description || 'No data') + ' · market may be closed';
     }
-  } catch (e) {
+  } catch(e) {
     if (!cached) overlay.textContent = 'Chart unavailable · check connection';
-    console.warn('Chart fetch:', e.message);
+    console.warn('Yahoo chart fetch:', e.message);
   }
 }
 
@@ -2309,20 +2297,21 @@ function drawChart() {
 
 function fmtDatetimeLabel(dt) {
   const iv = state.chartInterval.interval;
-  if (iv === '5min' || iv === '1h') {
-    return dt.length > 10 ? dt.slice(11, 16) : dt.slice(5);
-  } else if (iv === '1day') {
+  if (iv === '5m' || iv === '2m' || iv === '1m' || iv === '1h' || iv === '60m') {
+    // Intraday — show HH:MM in IST
+    return new Date(dt).toLocaleTimeString('en-IN',
+      { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+  } else if (iv === '1d') {
     const p = dt.slice(0, 10).split('-');
     return `${p[1]}/${p[2]}`;
   } else {
-    const d = new Date(dt);
-    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    return new Date(dt).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
   }
 }
 
 // ── TIME RANGE SELECTOR ───────────────────────────────────────────────────────
-function setTimeRange(interval, outputsize, label, btn) {
-  state.chartInterval = { interval, outputsize, label };
+function setTimeRange(interval, range, label, btn) {
+  state.chartInterval = { interval, range, label };
   document.querySelectorAll('.tr-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   fetchChartData(state.chartSym, state.chartName);

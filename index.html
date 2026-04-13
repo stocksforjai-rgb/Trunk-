@@ -1020,6 +1020,7 @@ const state = {
   activeScreenerGrpId:   null,
   globalGroups:          [],
   activeGlobalGrpId:     null,
+  companyProfiles:       {},   // { 'INFY': { name, industry, description, keywords, ts } }
 };
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -1281,6 +1282,7 @@ function addToGlobal(sym, label) {
     return false;
   }
   state.globalList.push({ sym, label });
+  fetchCompanyProfile(sym, label);
   syncGlobalGroupStocks();
   fetchGlobalStocks();
   return true;
@@ -1471,6 +1473,100 @@ function loadQuoteCache() {
   } catch(e) { return false; }
 }
 
+// ── COMPANY PROFILES (dynamic business intelligence) ─────────────────────────
+function loadCompanyProfiles() {
+  try {
+    const raw = localStorage.getItem('company_profiles');
+    return raw ? JSON.parse(raw) : {};
+  } catch(e) { return {}; }
+}
+function saveCompanyProfiles() {
+  try { localStorage.setItem('company_profiles', JSON.stringify(state.companyProfiles)); } catch(e) {}
+}
+
+async function fetchCompanyProfile(sym, label) {
+  const key = label.toUpperCase();
+  // Skip if we have a fresh profile (24h TTL)
+  if (state.companyProfiles[key]?.ts && Date.now() - state.companyProfiles[key].ts < 86_400_000) return;
+
+  const prof = { name: label, industry: '', description: '', keywords: [label.toLowerCase()], ts: Date.now() };
+
+  // 1. Finnhub company profile — gives industry + full name
+  try {
+    const finnSym = sym.includes(':NSE') ? sym.replace(':NSE', '.NS')
+                  : sym.includes(':BSE') ? sym.replace(':BSE', '.BO')
+                  : sym;
+    const res  = await apiFetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(finnSym)}&token=${KEYS.FINNHUB}`);
+    const data = await res.json();
+    if (data.name) prof.name = data.name;
+    if (data.finnhubIndustry) prof.industry = data.finnhubIndustry;
+    if (data.weburl) prof.weburl = data.weburl;
+  } catch(e) { console.log('Finnhub profile:', e.message); }
+
+  // 2. Wikipedia summary — gives a real "About Us" style description
+  try {
+    const searchName = prof.name
+      .replace(/\s+(Limited|Ltd|Inc|Incorporated|Corp|Corporation|Co|Company|plc|NV|SA|AG|SE)\.?$/gi, '')
+      .trim();
+    const res  = await apiFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchName)}`);
+    const data = await res.json();
+    if (data.extract && data.type !== 'disambiguation') {
+      prof.description = data.extract.slice(0, 600);
+    }
+  } catch(e) { console.log('Wikipedia summary:', e.message); }
+
+  // 3. Extract keywords from industry + description
+  const kws = new Set([label.toLowerCase(), prof.name.toLowerCase()]);
+  // Industry words
+  if (prof.industry) {
+    prof.industry.toLowerCase().split(/[\s,&\/]+/).filter(w => w.length > 3).forEach(w => kws.add(w));
+  }
+  // Meaningful words from Wikipedia description
+  if (prof.description) {
+    const STOP = new Set(['that','this','with','from','have','been','were','they','their','which',
+      'about','would','these','other','than','also','into','some','such','when','what','more',
+      'most','very','just','only','over','after','before','between','through','does','based',
+      'under','being','while','where','could','should','there','those','every','during','since']);
+    prof.description.toLowerCase()
+      .replace(/[^a-z\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 4 && !STOP.has(w))
+      .forEach(w => kws.add(w));
+  }
+  // Include known LABEL_ALIASES if available
+  if (typeof LABEL_ALIASES !== 'undefined') {
+    (LABEL_ALIASES[key] || []).forEach(a => kws.add(a.toLowerCase()));
+  }
+
+  prof.keywords = [...kws];
+  state.companyProfiles[key] = prof;
+  saveCompanyProfiles();
+}
+
+// Get all keywords for a company — dynamic profile + SECTOR_MAP fallback
+function getCompanyKeywords(label) {
+  const key = label.toUpperCase();
+  const kws = new Set();
+
+  // Dynamic profile keywords (from Finnhub + Wikipedia)
+  const prof = state.companyProfiles[key];
+  if (prof?.keywords) prof.keywords.forEach(k => kws.add(k));
+
+  // Static SECTOR_MAP keywords (fallback)
+  const sm = typeof SECTOR_MAP !== 'undefined' ? SECTOR_MAP[key] : null;
+  if (sm?.q) {
+    sm.q.toLowerCase().replace(/["()]/g, '').split(/\s+/).filter(w => w.length > 4).forEach(w => kws.add(w));
+  }
+
+  // Always include label itself and aliases
+  kws.add(label.toLowerCase());
+  if (typeof LABEL_ALIASES !== 'undefined') {
+    (LABEL_ALIASES[key] || []).forEach(a => kws.add(a.toLowerCase()));
+  }
+
+  return [...kws];
+}
+
 // ── SCREENER: RENDER ──────────────────────────────────────────────────────────
 function renderScreener() {
   const tb = document.getElementById('tbl-screener');
@@ -1502,6 +1598,7 @@ function addToScreener(sym, label) {
     return false;
   }
   state.screener.push({ sym, label, error: false, isNSE: isNSE(sym) });
+  fetchCompanyProfile(sym, label);
   syncScreenerGroupStocks();
   fetchScreenerQuotes();
   fetchNews();
@@ -1794,10 +1891,14 @@ async function fetchSectorNews(sym, label) {
 
   // Update the context bar below tabs
   const ctx = document.getElementById('sector-context');
-  if (profile) {
-    document.getElementById('sec-name-label').textContent = '▶ ' + profile.sector + '  ';
-    document.getElementById('sec-geo-label').textContent  =
-      '· ' + profile.geo.replace(/['"()]/g, '').replace(/ OR /g, ' · ').slice(0, 80);
+  const dynProf = state.companyProfiles[label.toUpperCase()];
+  if (profile || dynProf) {
+    const sectorLabel = dynProf?.industry || profile?.sector || 'EQUITY';
+    const contextText = dynProf?.description
+      ? dynProf.description.slice(0, 100)
+      : profile?.geo ? profile.geo.replace(/['"()]/g, '').replace(/ OR /g, ' · ').slice(0, 80) : '';
+    document.getElementById('sec-name-label').textContent = '▶ ' + sectorLabel + '  ';
+    document.getElementById('sec-geo-label').textContent  = contextText ? '· ' + contextText : '';
     ctx.style.display = 'block';
   } else {
     ctx.style.display = 'none';
@@ -1809,13 +1910,8 @@ async function fetchSectorNews(sym, label) {
 
   const items = [];
 
-  // Build keyword set from profile for RSS filtering
-  const kwSet = profile
-    ? profile.q.toLowerCase().replace(/["()]/g, '').split(/\s+/).filter(w => w.length > 4)
-    : [];
-  kwSet.push(label.toLowerCase());
-  // Add aliases for the company label
-  (LABEL_ALIASES[label.toUpperCase()] || []).forEach(a => kwSet.push(a.toLowerCase()));
+  // Build keyword set from dynamic company profile + SECTOR_MAP + aliases
+  const kwSet = getCompanyKeywords(label);
 
   const INTL_MARKS = ['BLOOMBERG','REUTERS','WSJ','FT.COM','CNBC','MARKETWATCH',
     'FINANCIAL TIMES','THE ECONOMIST','FORTUNE','BARRONS','BUSINESS INSIDER'];
@@ -1870,9 +1966,14 @@ async function fetchSectorNews(sym, label) {
     .forEach(it => items.push({ ...it, intl: false }));
 
   // Global: filter by kwSet OR sector geo keywords (if intl: true)
-  const geoKws = profile?.intl && profile?.geo
-    ? profile.geo.toLowerCase().replace(/['"()]/g, '').split(/ or /i).map(s => s.trim()).filter(Boolean)
-    : [];
+  const geoKws = [];
+  if (profile?.intl && profile?.geo) {
+    profile.geo.toLowerCase().replace(/['"()]/g, '').split(/ or /i).map(s => s.trim()).filter(Boolean).forEach(k => geoKws.push(k));
+  }
+  // Also add dynamic profile keywords to geo filtering
+  if (dynProf?.keywords) {
+    dynProf.keywords.filter(k => k.length > 4).forEach(k => geoKws.push(k));
+  }
   globalItems
     .filter(it => {
       const hl = it.hl.toLowerCase();
@@ -1921,9 +2022,7 @@ function getScreenerKeywords() {
 function expandedNewsKeywords() {
   const kws = new Set();
   state.screener.forEach(s => {
-    const sym = s.label.toUpperCase();
-    kws.add(sym);
-    (LABEL_ALIASES[sym] || []).forEach(a => kws.add(a));
+    getCompanyKeywords(s.label).forEach(k => kws.add(k));
   });
   return [...kws];
 }
@@ -2182,8 +2281,39 @@ async function fetchChartData(symbol, name) {
       document.getElementById('chart-title').textContent = `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
       overlay.style.display = 'none';
       drawChart();
-    } else if (!cached) {
-      overlay.textContent = (data?.chart?.error?.description || 'No data') + ' · market may be closed';
+    } else {
+      // Market closed or no data for this range — try wider range
+      const WIDER = { '1d':'5d', '5d':'1mo', '6mo':'1y', '1y':'2y', '5y':'10y' };
+      const widerRange = WIDER[range];
+      if (widerRange) {
+        try {
+          const url2  = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=${interval}&range=${widerRange}&includePrePost=false`;
+          const res2  = await apiFetch(url2);
+          const data2 = await res2.json();
+          const r2    = data2?.chart?.result?.[0];
+          if (r2?.timestamp?.length) {
+            const ts2 = r2.timestamp;
+            const q2  = r2.indicators.quote[0];
+            const ohlc = ts2.map((t, i) => ({
+              open: q2.open[i], high: q2.high[i], low: q2.low[i], close: q2.close[i],
+              datetime: new Date(t * 1000).toISOString(),
+            })).filter(c => c.close != null && c.open != null);
+            state.chart     = ohlc;
+            state.chartSym  = symbol;
+            state.chartName = name || sym0;
+            saveChartCache(symbol, cacheKey, ohlc);
+            document.getElementById('chart-title').textContent = `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
+            overlay.style.display = 'none';
+            drawChart();
+          } else if (!cached) {
+            overlay.textContent = 'No chart data available';
+          }
+        } catch(e2) {
+          if (!cached) overlay.textContent = 'Chart unavailable';
+        }
+      } else if (!cached) {
+        overlay.textContent = (data?.chart?.error?.description || 'No data') + ' · market may be closed';
+      }
     }
   } catch(e) {
     if (!cached) overlay.textContent = 'Chart unavailable · check connection';
@@ -2427,6 +2557,7 @@ function init() {
   state.globalList = gGrp ? gGrp.stocks.map(s => ({ ...s })) : [];
 
   state.fxList = loadFxFromStorage();
+  state.companyProfiles = loadCompanyProfiles();
 
   // ── 2. Paint the UI immediately using cached prices (page visible in <100ms) ─
   loadQuoteCache();
@@ -2442,6 +2573,12 @@ function init() {
   setTimeout(() => fetchChartData(state.chartSym, state.chartName), 1500); // +1.5s
   setTimeout(fetchNews,                                       4000); // +4s  (non-critical)
   setTimeout(fetchAnnouncements,                              6000); // +6s  (non-critical)
+
+  // Fetch company profiles for all screener + global stocks in background
+  setTimeout(() => {
+    state.screener.forEach(s => fetchCompanyProfile(s.sym, s.label));
+    state.globalList.forEach(s => fetchCompanyProfile(s.sym, s.label));
+  }, 8000);
 }
 
 // Refresh intervals

@@ -164,7 +164,7 @@
       background: #1a0f00;
       border-bottom: 1px solid #ff8c00;
       padding: 3px 8px;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: bold;
       color: #ffaa00;
       display: flex;
@@ -389,8 +389,10 @@
     .ann-item .ann-body { color: #666; font-size: 10px; margin-top: 3px; line-height: 1.45; }
 
     /* Screener group bar — larger text, same bar height */
-    #screener-groups-bar .grp-btn { font-size: 13px; padding: 0px 5px; }
-    #screener-groups-bar .grp-add-btn { font-size: 15px; }
+    #screener-groups-bar .grp-btn,
+    #global-groups-bar .grp-btn   { font-size: 13px; padding: 0px 5px; }
+    #screener-groups-bar .grp-add-btn,
+    #global-groups-bar .grp-add-btn { font-size: 15px; }
 
     /* ── NEWS TABS ── */
     .news-tab {
@@ -715,28 +717,38 @@ const DEFAULT_GLOBAL_STOCKS = [
 // Default 8 currencies shown vs INR on first load
 const DEFAULT_FX_CURRENCIES = ['USD','EUR','GBP','JPY','AUD','SGD','CNY','CHF'];
 
-// ── NEWS LABEL ALIASES (ticker → common names seen in headlines) ──────────────
+// ── NEWS LABEL ALIASES (ticker → common names seen in headlines & BSE titles) ─
 const LABEL_ALIASES = {
   INFY:        ['INFOSYS'],
   TCS:         ['TATA CONSULTANCY','TATA CONSULT'],
   HDFCBANK:    ['HDFC BANK','HDFCBANK'],
   ICICIBANK:   ['ICICI BANK','ICICIBANK'],
-  RELIANCE:    ['RELIANCE IND','RIL'],
+  RELIANCE:    ['RELIANCE IND','RELIANCE INDUSTRIES','RIL'],
   WIPRO:       ['WIPRO'],
-  ADANIENT:    ['ADANI ENT','ADANI ENTERPRISES','ADANI GROUP'],
+  ADANIENT:    ['ADANI ENTERPRISES','ADANI ENT','ADANI GROUP'],
   ADANIPORTS:  ['ADANI PORTS','APSEZ'],
   ADANIPOWER:  ['ADANI POWER'],
   ADANIGREEN:  ['ADANI GREEN'],
+  ADANIGT:     ['ADANI TOTAL GAS','ADANI GAS'],
   BAJFINANCE:  ['BAJAJ FINANCE','BAJAJ FIN'],
   BAJAJFINSV:  ['BAJAJ FINSERV'],
-  SBIN:        ['STATE BANK','SBI'],
+  SBIN:        ['STATE BANK','STATE BANK OF INDIA','SBI'],
   AXISBANK:    ['AXIS BANK'],
   KOTAKBANK:   ['KOTAK BANK','KOTAK MAHINDRA'],
   HCLTECH:     ['HCL TECH','HCL TECHNOLOGIES'],
   TECHM:       ['TECH MAHINDRA','TECHM'],
-  ONGC:        ['ONGC','OIL AND NATURAL GAS'],
+  ONGC:        ['OIL AND NATURAL GAS','OIL & NATURAL GAS','ONGC'],
   NTPC:        ['NTPC'],
-  POWERGRID:   ['POWER GRID','POWERGRID'],
+  POWERGRID:   ['POWER GRID','POWER GRID CORPORATION','POWERGRID'],
+  TATAMOTORS:  ['TATA MOTORS'],
+  TATASTEEL:   ['TATA STEEL'],
+  MARUTI:      ['MARUTI SUZUKI','MARUTI'],
+  SUNPHARMA:   ['SUN PHARMA','SUN PHARMACEUTICAL'],
+  DRREDDY:     ['DR REDDY','DR. REDDY'],
+  ULTRACEMCO:  ['ULTRATECH CEMENT','ULTRATECH'],
+  NESTLEIND:   ['NESTLE INDIA','NESTLE'],
+  HINDALCO:    ['HINDALCO'],
+  JSWSTEEL:    ['JSW STEEL'],
   AAPL:        ['APPLE'],
   MSFT:        ['MICROSOFT'],
   NVDA:        ['NVIDIA'],
@@ -1750,89 +1762,76 @@ async function fetchSectorNews(sym, label) {
 
   const items = [];
 
-  // ── 1. NewsAPI — broad sector + geo query across all sources ──────────────
-  try {
-    const baseQ = profile ? `${label} ${profile.q}` : label;
-    const geoQ  = profile?.geo || '';
-    const fullQ = geoQ ? `(${baseQ}) OR (${geoQ})` : baseQ;
-    const res = await fetch(
-      `https://newsapi.org/v2/everything?q=${encodeURIComponent(fullQ)}&language=en&pageSize=12&sortBy=publishedAt&apiKey=${KEYS.NEWS}`
-    );
-    const data = await res.json();
-    if (data.articles) {
-      const INTL_MARKS = ['BLOOMBERG','REUTERS','WALL STREET','WSJ','FINANCIAL TIMES',
-        'THE ECONOMIST','MARKETWATCH','CNBC','FORTUNE','BUSINESS INSIDER',"BARRON'S",'BBC'];
-      data.articles.forEach(a => {
-        if (!a.title || a.title === '[Removed]') return;
-        const srcRaw = (a.source?.name || 'NEWS').toUpperCase();
-        const isIntl = INTL_MARKS.some(m => srcRaw.includes(m));
-        items.push({
-          ts:   fmtISTTime(a.publishedAt),
-          src:  srcRaw.slice(0, 20),
-          hl:   a.title.replace(/ - [^-]+$/, ''),
-          url:  a.url || '#',
-          intl: isIntl,
-        });
-      });
-    }
-  } catch(e) { console.log('Sector NewsAPI:', e.message); }
-
-  // ── 2. Finnhub company news — last 14 days ────────────────────────────────
-  try {
-    const today  = new Date();
-    const fromDt = new Date(today); fromDt.setDate(fromDt.getDate() - 14);
-    const finnSym = isNSE(sym)
-      ? sym.replace(':NSE', '.NS').replace(':BSE', '.BO')
-      : sym;
-    const res = await fetch(
-      `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(finnSym)}` +
-      `&from=${fromDt.toISOString().slice(0, 10)}&to=${today.toISOString().slice(0, 10)}` +
-      `&token=${KEYS.FINNHUB}`
-    );
-    const articles = await res.json();
-    if (Array.isArray(articles)) {
-      const INTL_MARKS = ['BLOOMBERG','REUTERS','WSJ','FT.COM','CNBC','MARKETWATCH'];
-      articles.slice(0, 10).forEach(a => {
-        if (!a.headline) return;
-        const srcRaw = (a.source || 'FINNHUB').toUpperCase().slice(0, 20);
-        items.push({
-          ts:   new Date(a.datetime * 1000).toLocaleTimeString('en-IN',
-                  { timeZone:'Asia/Kolkata', hour12:false, hour:'2-digit', minute:'2-digit' }),
-          src:  srcRaw,
-          hl:   a.headline,
-          url:  a.url || '#',
-          intl: INTL_MARKS.some(m => srcRaw.includes(m)),
-        });
-      });
-    }
-  } catch(e) { console.log('Sector Finnhub news:', e.message); }
-
-  // ── 3. National RSS — ET / LiveMint / MoneyControl filtered by sector ─────
-  const rssItems = [];
-  await fetchRSS('https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', 'ET MARKETS', rssItems, 20);
-  await fetchRSS('https://www.livemint.com/rss/markets',                                'LIVEMINT',   rssItems, 15);
-  await fetchRSS('https://www.moneycontrol.com/rss/MCtopnews.xml',                      'MONEYCTRL',  rssItems, 15);
-
   // Build keyword set from profile for RSS filtering
   const kwSet = profile
     ? profile.q.toLowerCase().replace(/["()]/g, '').split(/\s+/).filter(w => w.length > 4)
     : [];
-  kwSet.push(label.toLowerCase()); // always match the company name itself
+  kwSet.push(label.toLowerCase());
+  // Add aliases for the company label
+  (LABEL_ALIASES[label.toUpperCase()] || []).forEach(a => kwSet.push(a.toLowerCase()));
 
-  rssItems
+  const INTL_MARKS = ['BLOOMBERG','REUTERS','WSJ','FT.COM','CNBC','MARKETWATCH',
+    'FINANCIAL TIMES','THE ECONOMIST','FORTUNE','BARRONS','BUSINESS INSIDER'];
+
+  // ── Finnhub company news + all RSS sources — fully parallel ───────────────
+  const finnhubProm = (async () => {
+    try {
+      const today  = new Date();
+      const fromDt = new Date(today); fromDt.setDate(fromDt.getDate() - 14);
+      const finnSym = isNSE(sym)
+        ? sym.replace(':NSE', '.NS').replace(':BSE', '.BO')
+        : sym;
+      const res = await fetch(
+        `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(finnSym)}` +
+        `&from=${fromDt.toISOString().slice(0, 10)}&to=${today.toISOString().slice(0, 10)}` +
+        `&token=${KEYS.FINNHUB}`
+      );
+      const articles = await res.json();
+      if (Array.isArray(articles)) {
+        articles.slice(0, 12).forEach(a => {
+          if (!a.headline) return;
+          const srcRaw = (a.source || 'FINNHUB').toUpperCase().slice(0, 22);
+          items.push({
+            ts:   new Date(a.datetime * 1000).toLocaleTimeString('en-IN',
+                    { timeZone:'Asia/Kolkata', hour12:false, hour:'2-digit', minute:'2-digit' }),
+            src:  srcRaw,
+            hl:   a.headline,
+            url:  a.url || '#',
+            intl: INTL_MARKS.some(m => srcRaw.includes(m)),
+          });
+        });
+      }
+    } catch(e) { console.log('Sector Finnhub news:', e.message); }
+  })();
+
+  // National + international RSS feeds — all parallel
+  const nationalItems = [], globalItems = [];
+  const rssFetches = [
+    fetchRSS('https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', 'ET MARKETS', nationalItems, 20),
+    fetchRSS('https://www.livemint.com/rss/markets',                                'LIVEMINT',   nationalItems, 15),
+    fetchRSS('https://www.moneycontrol.com/rss/MCtopnews.xml',                      'MONEYCTRL',  nationalItems, 15),
+    fetchRSS('https://feeds.feedburner.com/ndtvprofit-latest',                      'NDTV PROFIT',nationalItems, 10),
+    fetchRSS('https://feeds.reuters.com/reuters/businessNews',                      'REUTERS',    globalItems, 15),
+    fetchRSS('https://www.cnbc.com/id/10000664/device/rss/rss.html',                'CNBC',       globalItems, 12),
+    fetchRSS('https://feeds.bloomberg.com/markets/news.rss',                        'BLOOMBERG',  globalItems, 10),
+  ];
+  await Promise.all([finnhubProm, ...rssFetches]);
+
+  // National: filter by kwSet
+  nationalItems
     .filter(it => kwSet.some(kw => it.hl.toLowerCase().includes(kw)))
-    .slice(0, 12)
     .forEach(it => items.push({ ...it, intl: false }));
 
-  // ── 4. Reuters RSS (international sector news) ────────────────────────────
-  if (profile?.intl) {
-    const reutersItems = [];
-    await fetchRSS('https://feeds.reuters.com/reuters/businessNews', 'REUTERS', reutersItems, 12);
-    reutersItems
-      .filter(it => kwSet.some(kw => it.hl.toLowerCase().includes(kw)))
-      .slice(0, 6)
-      .forEach(it => items.push({ ...it, intl: true }));
-  }
+  // Global: filter by kwSet OR sector geo keywords (if intl: true)
+  const geoKws = profile?.intl && profile?.geo
+    ? profile.geo.toLowerCase().replace(/['"()]/g, '').split(/ or /i).map(s => s.trim()).filter(Boolean)
+    : [];
+  globalItems
+    .filter(it => {
+      const hl = it.hl.toLowerCase();
+      return kwSet.some(kw => hl.includes(kw)) || geoKws.some(kw => hl.includes(kw));
+    })
+    .forEach(it => items.push({ ...it, intl: true }));
 
   // Deduplicate and save
   const seen = new Set();
@@ -1841,7 +1840,7 @@ async function fetchSectorNews(sym, label) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 30);
+  }).slice(0, 40);
 
   renderSectorNews();
   document.getElementById('news-badge').textContent = state.sectorNews.length + ' ITEMS';
@@ -1885,13 +1884,16 @@ function expandedNewsKeywords() {
 async function fetchNews() {
   const items = [];
 
-  // All RSS feeds fetched in parallel
-  const rssItems = [];
+  // All RSS feeds fetched in parallel — national + global
+  const rssItems = [], globalItems = [];
   await Promise.all([
     fetchRSS('https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', 'ET MARKETS',  rssItems, 18),
     fetchRSS('https://www.moneycontrol.com/rss/MCtopnews.xml',                      'MONEYCTRL',   rssItems, 14),
     fetchRSS('https://www.livemint.com/rss/markets',                                'LIVEMINT',    rssItems, 12),
     fetchRSS('https://feeds.feedburner.com/ndtvprofit-latest',                      'NDTV PROFIT', rssItems, 10),
+    fetchRSS('https://feeds.reuters.com/reuters/businessNews',                      'REUTERS',     globalItems, 12),
+    fetchRSS('https://www.cnbc.com/id/10000664/device/rss/rss.html',                'CNBC',        globalItems, 10),
+    fetchRSS('https://feeds.bloomberg.com/markets/news.rss',                        'BLOOMBERG',   globalItems, 8),
   ]);
 
   // Broaden filter: match ticker OR any known alias
@@ -1900,6 +1902,13 @@ async function fetchNews() {
     ? rssItems.filter(it => keywords.some(k => it.hl.toUpperCase().includes(k)))
     : rssItems;
   items.push(...filtered);
+
+  // Include matching global news
+  const keywords = expandedNewsKeywords();
+  const matchedGlobal = keywords.length > 0
+    ? globalItems.filter(it => keywords.some(k => it.hl.toUpperCase().includes(k)))
+    : globalItems.slice(0, 8);
+  items.push(...matchedGlobal.map(it => ({ ...it, intl: true })));
 
   // If very few matches, also include top general market news
   if (items.length < 6) items.push(...rssItems.slice(0, 10));
@@ -1967,49 +1976,33 @@ async function fetchAnnouncements() {
   const items  = [];
   const labels = state.screener.map(s => s.label.toUpperCase());
 
-  // ── BSE Corporate Announcements RSS ───────────────────────────────────────
-  try {
-    const bseUrl = 'https://www.bseindia.com/Rssfeed/RSS_Feed_Corporate_Announcements.aspx';
-    const url    = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(bseUrl)}&api_key=${KEYS.RSS}&count=50`;
-    const res    = await fetch(url);
-    const data   = await res.json();
-    if (data.items) {
+  // ── BSE + Business Standard announcements — fetched in parallel ───────────
+  const annFeeds = [
+    { url: 'https://www.bseindia.com/Rssfeed/RSS_Feed_Corporate_Announcements.aspx', src: 'BSE', count: 60 },
+    { url: 'https://www.bseindia.com/Rssfeed/RSS_CorporateAnnouncement_Category_XBRL.aspx', src: 'BSE·XBRL', count: 30 },
+    { url: 'https://www.business-standard.com/rss/companies-101.rss', src: 'BS', count: 30 },
+    { url: 'https://economictimes.indiatimes.com/markets/rssfeeds/2146842.cms', src: 'ET·CORP', count: 20 },
+  ];
+  await Promise.all(annFeeds.map(async feed => {
+    try {
+      const url  = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}&api_key=${KEYS.RSS}&count=${feed.count}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      if (!data.items) return;
       data.items
-        .filter(it => labels.some(l => (it.title || '').toUpperCase().includes(l)))
+        .filter(it => matchesAnnouncement(it.title, labels))
         .forEach(it => {
           items.push({
             ts:   fmtISTTime(it.pubDate),
             co:   detectCompany(it.title, labels),
             hl:   it.title.replace(/\s+/g, ' ').trim(),
-            body: stripHtml(it.description || it.content || '').slice(0, 280),
-            src:  'BSE',
+            body: stripHtml(it.description || it.content || '').slice(0, 300),
+            src:  feed.src,
             url:  it.link || '#'
           });
         });
-    }
-  } catch (e) { console.log('BSE Announcements RSS:', e.message); }
-
-  // ── NSE / Business Standard Corporate News RSS ─────────────────────────────
-  try {
-    const bsUrl = 'https://www.business-standard.com/rss/companies-101.rss';
-    const url   = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(bsUrl)}&api_key=${KEYS.RSS}&count=30`;
-    const res   = await fetch(url);
-    const data  = await res.json();
-    if (data.items) {
-      data.items
-        .filter(it => labels.some(l => (it.title || '').toUpperCase().includes(l)))
-        .forEach(it => {
-          items.push({
-            ts:   fmtISTTime(it.pubDate),
-            co:   detectCompany(it.title, labels),
-            hl:   it.title.replace(/\s+/g, ' ').trim(),
-            body: stripHtml(it.description || it.content || '').slice(0, 280),
-            src:  'BS',
-            url:  it.link || '#'
-          });
-        });
-    }
-  } catch (e) { console.log('Business Standard RSS:', e.message); }
+    } catch(e) { console.log('Ann feed ' + feed.src + ':', e.message); }
+  }));
 
   // ── Finnhub company-news — ALL screener stocks (NSE converted to .NS) ──────
   const today   = new Date();
@@ -2064,7 +2057,18 @@ async function fetchAnnouncements() {
 
 function detectCompany(title, labels) {
   const up = (title || '').toUpperCase();
-  return labels.find(l => up.includes(l)) || '–';
+  return labels.find(l => {
+    if (up.includes(l)) return true;
+    return (LABEL_ALIASES[l] || []).some(a => up.includes(a));
+  }) || '–';
+}
+
+function matchesAnnouncement(title, labels) {
+  const up = (title || '').toUpperCase();
+  return labels.some(l => {
+    if (up.includes(l)) return true;
+    return (LABEL_ALIASES[l] || []).some(a => up.includes(a));
+  });
 }
 
 function renderAnnouncements() {

@@ -385,7 +385,12 @@
     .news-item .ts,  .ann-item .ann-ts  { color: #444; font-size: 10px; }
     .news-item .src, .ann-item .ann-co  { color: #ff8c00; font-size: 10px; font-weight: bold; }
     .news-item .hl  { color: #ffaa00; font-size: 11px; display: block; margin-top: 2px; }
-    .ann-item .ann-hl { color: #ffcc66; font-size: 11px; display: block; margin-top: 2px; }
+    .ann-item .ann-hl   { color: #ffcc66; font-size: 11px; display: block; margin-top: 2px; }
+    .ann-item .ann-body { color: #666; font-size: 10px; margin-top: 3px; line-height: 1.45; }
+
+    /* Screener group bar — larger text, same bar height */
+    #screener-groups-bar .grp-btn { font-size: 13px; padding: 0px 5px; }
+    #screener-groups-bar .grp-add-btn { font-size: 15px; }
 
     /* ── NEWS TABS ── */
     .news-tab {
@@ -709,6 +714,39 @@ const DEFAULT_GLOBAL_STOCKS = [
 
 // Default 8 currencies shown vs INR on first load
 const DEFAULT_FX_CURRENCIES = ['USD','EUR','GBP','JPY','AUD','SGD','CNY','CHF'];
+
+// ── NEWS LABEL ALIASES (ticker → common names seen in headlines) ──────────────
+const LABEL_ALIASES = {
+  INFY:        ['INFOSYS'],
+  TCS:         ['TATA CONSULTANCY','TATA CONSULT'],
+  HDFCBANK:    ['HDFC BANK','HDFCBANK'],
+  ICICIBANK:   ['ICICI BANK','ICICIBANK'],
+  RELIANCE:    ['RELIANCE IND','RIL'],
+  WIPRO:       ['WIPRO'],
+  ADANIENT:    ['ADANI ENT','ADANI ENTERPRISES','ADANI GROUP'],
+  ADANIPORTS:  ['ADANI PORTS','APSEZ'],
+  ADANIPOWER:  ['ADANI POWER'],
+  ADANIGREEN:  ['ADANI GREEN'],
+  BAJFINANCE:  ['BAJAJ FINANCE','BAJAJ FIN'],
+  BAJAJFINSV:  ['BAJAJ FINSERV'],
+  SBIN:        ['STATE BANK','SBI'],
+  AXISBANK:    ['AXIS BANK'],
+  KOTAKBANK:   ['KOTAK BANK','KOTAK MAHINDRA'],
+  HCLTECH:     ['HCL TECH','HCL TECHNOLOGIES'],
+  TECHM:       ['TECH MAHINDRA','TECHM'],
+  ONGC:        ['ONGC','OIL AND NATURAL GAS'],
+  NTPC:        ['NTPC'],
+  POWERGRID:   ['POWER GRID','POWERGRID'],
+  AAPL:        ['APPLE'],
+  MSFT:        ['MICROSOFT'],
+  NVDA:        ['NVIDIA'],
+  TSLA:        ['TESLA'],
+  AMZN:        ['AMAZON'],
+  GOOGL:       ['ALPHABET','GOOGLE'],
+  META:        ['META','FACEBOOK'],
+  TSM:         ['TSMC','TAIWAN SEMICONDUCTOR'],
+  '8058.T':    ['MITSUBISHI'],
+};
 
 // ── MASTER CURRENCY LIST (ISO 4217) — used for the FX search dropdown ─────────
 const FX_ALL_CURRENCIES = [
@@ -1834,42 +1872,37 @@ function getScreenerKeywords() {
   return state.screener.map(s => s.label).join(' OR ');
 }
 
+function expandedNewsKeywords() {
+  const kws = new Set();
+  state.screener.forEach(s => {
+    const sym = s.label.toUpperCase();
+    kws.add(sym);
+    (LABEL_ALIASES[sym] || []).forEach(a => kws.add(a));
+  });
+  return [...kws];
+}
+
 async function fetchNews() {
-  const items  = [];
-  const kw     = getScreenerKeywords();
+  const items = [];
 
-  // NewsAPI
-  try {
-    const url = kw
-      ? `https://newsapi.org/v2/top-headlines?q=${encodeURIComponent(kw)}&language=en&pageSize=10&apiKey=${KEYS.NEWS}`
-      : `https://newsapi.org/v2/top-headlines?country=in&category=business&pageSize=12&apiKey=${KEYS.NEWS}`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (data.articles) {
-      data.articles.forEach(a => {
-        if (!a.title || a.title === '[Removed]') return;
-        items.push({
-          ts:  fmtISTTime(a.publishedAt),
-          src: (a.source?.name || 'NEWS').slice(0, 18),
-          hl:  a.title.replace(/ - [^-]+$/, ''),
-          url: a.url || '#'
-        });
-      });
-    }
-  } catch (e) { console.log('NewsAPI:', e.message); }
-
-  // RSS feeds
+  // All RSS feeds fetched in parallel
   const rssItems = [];
-  await fetchRSS('https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', 'ET MARKETS',   rssItems, 14);
-  await fetchRSS('https://www.moneycontrol.com/rss/MCtopnews.xml',                      'MONEYCTRL',    rssItems, 10);
-  await fetchRSS('https://www.livemint.com/rss/markets',                                'LIVEMINT',     rssItems, 8);
+  await Promise.all([
+    fetchRSS('https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', 'ET MARKETS',  rssItems, 18),
+    fetchRSS('https://www.moneycontrol.com/rss/MCtopnews.xml',                      'MONEYCTRL',   rssItems, 14),
+    fetchRSS('https://www.livemint.com/rss/markets',                                'LIVEMINT',    rssItems, 12),
+    fetchRSS('https://feeds.feedburner.com/ndtvprofit-latest',                      'NDTV PROFIT', rssItems, 10),
+  ]);
 
-  // Filter RSS by screener labels if screener populated
-  const labels = state.screener.map(s => s.label.toUpperCase());
-  const filtered = (labels.length > 0)
-    ? rssItems.filter(it => labels.some(l => it.hl.toUpperCase().includes(l)))
+  // Broaden filter: match ticker OR any known alias
+  const keywords = expandedNewsKeywords();
+  const filtered = keywords.length > 0
+    ? rssItems.filter(it => keywords.some(k => it.hl.toUpperCase().includes(k)))
     : rssItems;
   items.push(...filtered);
+
+  // If very few matches, also include top general market news
+  if (items.length < 6) items.push(...rssItems.slice(0, 10));
 
   const seen = new Set();
   state.news = items.filter(n => {
@@ -1877,13 +1910,16 @@ async function fetchNews() {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 30);
+  }).slice(0, 35);
 
-  // Only update the DOM if the market tab is currently active
   if (state.newsTab === 'market') {
     renderNews();
     document.getElementById('news-badge').textContent = state.news.length + ' ITEMS';
   }
+}
+
+function stripHtml(html) {
+  return (html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
 }
 
 async function fetchRSS(feedUrl, source, arr, count = 8) {
@@ -1895,10 +1931,11 @@ async function fetchRSS(feedUrl, source, arr, count = 8) {
       data.items.forEach(item => {
         if (!item.title) return;
         arr.push({
-          ts:  fmtISTTime(item.pubDate),
-          src: source,
-          hl:  item.title.replace(/\s+/g, ' ').trim(),
-          url: item.link || '#'
+          ts:   fmtISTTime(item.pubDate),
+          src:  source,
+          hl:   item.title.replace(/\s+/g, ' ').trim(),
+          body: stripHtml(item.description || item.content || '').slice(0, 220),
+          url:  item.link || '#'
         });
       });
     }
@@ -1941,10 +1978,12 @@ async function fetchAnnouncements() {
         .filter(it => labels.some(l => (it.title || '').toUpperCase().includes(l)))
         .forEach(it => {
           items.push({
-            ts:  fmtISTTime(it.pubDate),
-            co:  detectCompany(it.title, labels),
-            hl:  '[BSE] ' + it.title.replace(/\s+/g, ' ').trim(),
-            url: it.link || '#'
+            ts:   fmtISTTime(it.pubDate),
+            co:   detectCompany(it.title, labels),
+            hl:   it.title.replace(/\s+/g, ' ').trim(),
+            body: stripHtml(it.description || it.content || '').slice(0, 280),
+            src:  'BSE',
+            url:  it.link || '#'
           });
         });
     }
@@ -1961,10 +2000,12 @@ async function fetchAnnouncements() {
         .filter(it => labels.some(l => (it.title || '').toUpperCase().includes(l)))
         .forEach(it => {
           items.push({
-            ts:  fmtISTTime(it.pubDate),
-            co:  detectCompany(it.title, labels),
-            hl:  '[NSE/BSE] ' + it.title.replace(/\s+/g, ' ').trim(),
-            url: it.link || '#'
+            ts:   fmtISTTime(it.pubDate),
+            co:   detectCompany(it.title, labels),
+            hl:   it.title.replace(/\s+/g, ' ').trim(),
+            body: stripHtml(it.description || it.content || '').slice(0, 280),
+            src:  'BS',
+            url:  it.link || '#'
           });
         });
     }
@@ -1995,11 +2036,13 @@ async function fetchAnnouncements() {
             .forEach(a => {
               if (!a.headline) return;
               items.push({
-                ts:  new Date(a.datetime * 1000).toLocaleTimeString('en-IN',
-                       { timeZone: 'Asia/Kolkata', hour12: false, hour: '2-digit', minute: '2-digit' }),
-                co:  s.label,
-                hl:  a.headline,
-                url: a.url || '#'
+                ts:   new Date(a.datetime * 1000).toLocaleTimeString('en-IN',
+                        { timeZone: 'Asia/Kolkata', hour12: false, hour: '2-digit', minute: '2-digit' }),
+                co:   s.label,
+                hl:   a.headline,
+                body: a.summary ? a.summary.slice(0, 280) : '',
+                src:  'FINNHUB',
+                url:  a.url || '#'
               });
             });
         })
@@ -2038,7 +2081,9 @@ function renderAnnouncements() {
     <div class="ann-item" onclick="window.open('${escHtml(a.url)}','_blank')">
       <span class="ann-ts">${a.ts}</span>
       <span class="ann-co"> [${escHtml(a.co)}]</span>
+      ${a.src ? `<span style="color:#555;font-size:9px"> · ${escHtml(a.src)}</span>` : ''}
       <span class="ann-hl">${escHtml(a.hl)}</span>
+      ${a.body ? `<div class="ann-body">${escHtml(a.body)}</div>` : ''}
     </div>`).join('');
 }
 

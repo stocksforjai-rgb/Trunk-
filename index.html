@@ -141,24 +141,6 @@
       color: #000;
     }
 
-    /* ── TICKER TAPE ── */
-    #ticker-wrap {
-      background: #0d0d00;
-      border-bottom: 1px solid #333;
-      overflow: hidden;
-      height: 20px;
-      flex-shrink: 0;
-    }
-    #ticker {
-      display: inline-flex;
-      white-space: nowrap;
-      animation: scroll-left 60s linear infinite;
-    }
-    .tick-item { padding: 2px 20px; font-size: 11px; }
-    @keyframes scroll-left {
-      0%   { transform: translateX(0); }
-      100% { transform: translateX(-50%); }
-    }
 
     /* ── MAIN GRID (4 cols) ── */
     #grid {
@@ -448,10 +430,6 @@
   <button onclick="setView('announcements',this)">ANNOUNCEMENTS</button>
 </div>
 
-<!-- TICKER TAPE -->
-<div id="ticker-wrap">
-  <div id="ticker"><span class="tick-item neu">Connecting to market data feeds...</span></div>
-</div>
 
 <!-- GRID -->
 <div id="grid">
@@ -500,7 +478,7 @@
     <div class="panel-header">
       <span>GLOBAL MARKETS</span>
       <div style="display:flex;gap:6px;align-items:center">
-        <span class="neu" style="font-size:9px">NYSE · NASDAQ</span>
+        <span class="neu" style="font-size:9px">ALL MARKETS</span>
         <button id="btn-add-global" onclick="focusSearch()" title="Search a symbol then click ＋ GLOBAL" style="background:transparent;border:1px solid rgba(255,140,0,0.6);color:#ff8c00;font-family:inherit;font-size:10px;padding:1px 6px;cursor:pointer">＋ ADD</button>
       </div>
     </div>
@@ -951,7 +929,6 @@ function removeGlobalStock(sym) {
   state.global     = state.global.filter(s => s.sym !== sym);
   saveGlobalToStorage();
   renderGlobal();
-  buildTicker();
 }
 
 function addToGlobalFromSearch(sym, label) {
@@ -1079,7 +1056,6 @@ async function fetchScreenerQuotes() {
   });
 
   renderScreener();
-  buildTicker();
   document.getElementById('screener-refresh').textContent = 'UPD ' + istTime();
 }
 
@@ -1127,7 +1103,6 @@ function removeScreenerStock(idx) {
   state.screener.splice(idx, 1);
   saveScreenerToStorage();
   renderScreener();
-  buildTicker();
   fetchNews();
   fetchAnnouncements();
 }
@@ -1205,7 +1180,7 @@ async function doSymbolSearch(query) {
       return;
     }
     const results = data.result
-      .filter(r => r.symbol && (r.type === 'Common Stock' || r.type === 'EQS' || r.type === ''))
+      .filter(r => r.symbol)
       .slice(0, 8);
     renderDropdown(results);
   } catch (e) {
@@ -1256,14 +1231,13 @@ async function fetchGlobalStocks() {
       state.globalList.map(s =>
         fetch(`https://finnhub.io/api/v1/quote?symbol=${s.sym}&token=${KEYS.FINNHUB}`)
           .then(r => r.json())
-          .then(d => ({ ...s, price: d.c, change: d.d, pct: d.dp, error: !(d.c > 0) }))
-          .catch(() => ({ ...s, error: true }))
+          .then(d => ({ ...s, price: d.c || null, change: d.d || null, pct: d.dp || null, noData: !(d.c > 0) }))
+          .catch(() => ({ ...s, price: null, change: null, pct: null, noData: true }))
       )
     );
-    state.global = results.filter(r => !r.error);
+    state.global = results;
     renderGlobal();
-    buildTicker();
-  } catch (e) { console.warn('Global stocks:', e.message); }
+    } catch (e) { console.warn('Global stocks:', e.message); }
 }
 
 function renderGlobal() {
@@ -1272,19 +1246,19 @@ function renderGlobal() {
     tb.innerHTML = `<tr><td colspan="5" class="neu" style="padding:8px 4px">No stocks. Search a symbol and click ＋ GLOBAL, or type GL AAPL in CMD.</td></tr>`;
     return;
   }
-  if (!state.global.length) {
-    tb.innerHTML = `<tr><td colspan="5" class="neu">No data (market may be closed)</td></tr>`;
-    return;
-  }
-  tb.innerHTML = state.global.map(s => `
-    <tr>
-      <td class="sym-col">${s.label}</td>
-      <td>$${fmt(s.price)}</td>
-      <td class="${clsChg(s.change)}">${arrow(s.change)} ${fmt(Math.abs(s.change))}</td>
-      <td class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</td>
+  tb.innerHTML = state.globalList.map(s => {
+    const g = state.global.find(x => x.sym === s.sym) || { ...s, noData: true };
+    const priceCell = g.noData ? `<span class="neu">N/A</span>` : `$${fmt(g.price)}`;
+    const chgCell   = g.noData ? `<span class="neu">—</span>` : `<span class="${clsChg(g.change)}">${arrow(g.change)} ${fmt(Math.abs(g.change))}</span>`;
+    const pctCell   = g.noData ? `<span class="neu">—</span>` : `<span class="${clsChg(g.pct)}">${arrow(g.pct)}${fmt(Math.abs(g.pct))}%</span>`;
+    return `<tr>
+      <td class="sym-col">${escHtml(s.label)}</td>
+      <td>${priceCell}</td>
+      <td>${chgCell}</td>
+      <td>${pctCell}</td>
       <td><button class="screener-remove" onclick="removeGlobalStock('${escHtml(s.sym)}')" title="Remove from Global">✕</button></td>
-    </tr>`
-  ).join('');
+    </tr>`;
+  }).join('');
 }
 
 // ── FX SEARCH: EVENT LISTENERS ───────────────────────────────────────────────
@@ -1337,8 +1311,7 @@ async function fetchFX() {
     state.fxCurr = data.quote;
     if (!state.fxBase) state.fxBase = { ...data.quote };
     renderFX();
-    buildTicker();
-  } catch (e) { console.warn('FX:', e.message); }
+    } catch (e) { console.warn('FX:', e.message); }
 }
 
 function renderFX() {
@@ -1929,28 +1902,6 @@ function setTimeRange(interval, outputsize, label, btn) {
   fetchChartData(state.chartSym, state.chartName);
 }
 
-// ── TICKER TAPE ───────────────────────────────────────────────────────────────
-function buildTicker() {
-  const parts = [];
-  state.screener.filter(s => !s.error && s.price).forEach(s => {
-    const cur = (s.isNSE !== false) ? '₹' : '$';
-    parts.push(`<span class="sym-col">${s.label}</span> ${cur}${fmt(s.price)} <span class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</span>`);
-  });
-  state.global.forEach(s => {
-    parts.push(`<span class="sym-col">${s.label}</span> $${fmt(s.price)} <span class="${clsChg(s.pct)}">${arrow(s.pct)}${fmt(Math.abs(s.pct))}%</span>`);
-  });
-  if (state.fxCurr && state.fxCurr['INR']) {
-    const inrR = state.fxCurr['INR'];
-    [['USD', 1, 2], ['EUR', state.fxCurr['EUR'], 2], ['GBP', state.fxCurr['GBP'], 2], ['JPY', state.fxCurr['JPY'], 3]].forEach(([cur, div, d]) => {
-      if (!div) return;
-      const r = inrR / div;
-      parts.push(`<span class="sym-col">${cur}/INR</span> ₹${fmt(r, d)}`);
-    });
-  }
-  if (!parts.length) return;
-  const html = parts.map(h => `<span class="tick-item">${h} &nbsp;|</span>`).join('');
-  document.getElementById('ticker').innerHTML = html + html;
-}
 
 // ── COMMAND LINE ──────────────────────────────────────────────────────────────
 const HELP_HTML = `<span class="neu">HELP | CLEAR | &lt;SYM&gt; — lookup/chart &nbsp;|&nbsp; GL &lt;SYM&gt; — add to Global &nbsp;|&nbsp; GL -&lt;SYM&gt; — remove from Global</span>`;

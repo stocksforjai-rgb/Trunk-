@@ -1383,7 +1383,7 @@ async function fetchScreenerQuotes() {
   if (nseSym.length) {
     try {
       const symsStr = nseSym.map(s => s.sym).join(',');
-      const res = await fetch(
+      const res = await apiFetch(
         `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symsStr)}&apikey=${KEYS.TWELVE}`
       );
       const raw = await res.json();
@@ -1400,7 +1400,7 @@ async function fetchScreenerQuotes() {
   const finnData = {};
   if (otherSym.length) {
     await Promise.all(otherSym.map(s =>
-      fetch(`https://finnhub.io/api/v1/quote?symbol=${s.sym}&token=${KEYS.FINNHUB}`)
+      apiFetch(`https://finnhub.io/api/v1/quote?symbol=${s.sym}&token=${KEYS.FINNHUB}`)
         .then(r => r.json())
         .then(d => { finnData[s.sym] = d; })
         .catch(() => {})
@@ -1426,6 +1426,31 @@ async function fetchScreenerQuotes() {
 
 function isNSE(sym) { return sym.includes(':NSE') || sym.includes(':BSE'); }
 
+// ── API FETCH WITH TIMEOUT ────────────────────────────────────────────────────
+// Prevents stalled API calls from hanging the page forever.
+function apiFetch(url, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), timeoutMs);
+  return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(tid));
+}
+
+// ── CHART CACHE (localStorage) ────────────────────────────────────────────────
+function saveChartCache(symbol, interval, ohlc) {
+  try {
+    localStorage.setItem('chart_' + symbol + '_' + interval,
+      JSON.stringify({ ohlc, ts: Date.now() }));
+  } catch(e) {}
+}
+function loadChartCache(symbol, interval) {
+  try {
+    const raw = localStorage.getItem('chart_' + symbol + '_' + interval);
+    if (!raw) return null;
+    const { ohlc, ts } = JSON.parse(raw);
+    if (Date.now() - ts > 14_400_000) return null;  // 4h TTL
+    return ohlc;
+  } catch(e) { return null; }
+}
+
 // ── PRICE CACHE (localStorage) ────────────────────────────────────────────────
 function saveQuoteCache() {
   try {
@@ -1443,7 +1468,7 @@ function loadQuoteCache() {
     const raw = localStorage.getItem('quote_cache');
     if (!raw) return false;
     const { screener, global: glob, ts } = JSON.parse(raw);
-    if (Date.now() - ts > 3_600_000) return false;   // stale after 1h
+    if (Date.now() - ts > 14_400_000) return false;  // stale after 4h
     state.screener = state.screener.map(s => {
       const c = (screener || []).find(x => x.sym === s.sym);
       return c ? { ...s, ...c, error: false } : s;
@@ -1566,7 +1591,7 @@ function focusSearch() {
 
 async function doSymbolSearch(query) {
   try {
-    const res  = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${KEYS.FINNHUB}`);
+    const res  = await apiFetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${KEYS.FINNHUB}`);
     const data = await res.json();
     if (!data.result || !data.result.length) {
       searchDropdown.innerHTML = `<div class="sr-searching">No results for "${escHtml(query)}"</div>`;
@@ -1699,7 +1724,7 @@ function renderGlobal() {
 // ── FETCH: FX ─────────────────────────────────────────────────────────────────
 async function fetchFX() {
   try {
-    const res  = await fetch(`https://finnhub.io/api/v1/forex/rates?base=USD&token=${KEYS.FINNHUB}`);
+    const res  = await apiFetch(`https://finnhub.io/api/v1/forex/rates?base=USD&token=${KEYS.FINNHUB}`);
     const data = await res.json();
     if (!data.quote) return;
     state.fxCurr = data.quote;
@@ -1811,7 +1836,7 @@ async function fetchSectorNews(sym, label) {
       const finnSym = isNSE(sym)
         ? sym.replace(':NSE', '.NS').replace(':BSE', '.BO')
         : sym;
-      const res = await fetch(
+      const res = await apiFetch(
         `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(finnSym)}` +
         `&from=${fromDt.toISOString().slice(0, 10)}&to=${today.toISOString().slice(0, 10)}` +
         `&token=${KEYS.FINNHUB}`
@@ -1964,7 +1989,7 @@ function stripHtml(html) {
 async function fetchRSS(feedUrl, source, arr, count = 8) {
   try {
     const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&api_key=${KEYS.RSS}&count=${count}`;
-    const res  = await fetch(url);
+    const res  = await apiFetch(url, 9000);
     const data = await res.json();
     if (data.items) {
       data.items.forEach(item => {
@@ -2016,7 +2041,7 @@ async function fetchAnnouncements() {
   await Promise.all(annFeeds.map(async feed => {
     try {
       const url  = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}&api_key=${KEYS.RSS}&count=${feed.count}`;
-      const res  = await fetch(url);
+      const res  = await apiFetch(url, 9000);
       const data = await res.json();
       if (!data.items) return;
       data.items
@@ -2123,41 +2148,49 @@ function renderAnnouncements() {
 
 // ── FETCH: CHART DATA (OHLC) ──────────────────────────────────────────────────
 async function fetchChartData(symbol, name) {
-  const wrap = document.getElementById('chart-canvas-wrap');
   const overlay = document.getElementById('chart-overlay');
-  overlay.style.display = 'block';
-  overlay.textContent = 'Loading ' + symbol + '...';
-
   const { interval, outputsize, label: rangeLabel } = state.chartInterval;
+  const sym0 = symbol.split(':')[0];
 
+  // Show cached chart immediately — page feels instant
+  const cached = loadChartCache(symbol, interval);
+  if (cached && cached.length > 0) {
+    state.chart     = cached;
+    state.chartSym  = symbol;
+    state.chartName = name || sym0;
+    document.getElementById('chart-title').textContent = `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
+    overlay.style.display = 'none';
+    drawChart();
+  } else {
+    overlay.style.display = 'block';
+    overlay.textContent   = 'Loading ' + symbol + '...';
+  }
+
+  // Fetch fresh data in background — 8 s timeout so it never hangs
   try {
-    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${KEYS.TWELVE}`;
-    const res  = await fetch(url);
+    const url  = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${KEYS.TWELVE}`;
+    const res  = await apiFetch(url);
     const data = await res.json();
-
     if (data.values && data.values.length > 0) {
-      state.chart = data.values.slice().reverse().map(v => ({
-        open:     parseFloat(v.open),
-        high:     parseFloat(v.high),
-        low:      parseFloat(v.low),
-        close:    parseFloat(v.close),
+      const ohlc = data.values.slice().reverse().map(v => ({
+        open: parseFloat(v.open), high: parseFloat(v.high),
+        low:  parseFloat(v.low),  close: parseFloat(v.close),
         datetime: v.datetime,
       }));
+      state.chart     = ohlc;
       state.chartSym  = symbol;
-      state.chartName = name || symbol.split(':')[0];
-
-      const sym0 = symbol.split(':')[0];
-      document.getElementById('chart-title').textContent =
-        `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
+      state.chartName = name || sym0;
+      saveChartCache(symbol, interval, ohlc);
+      document.getElementById('chart-title').textContent = `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
       overlay.style.display = 'none';
-    } else {
-      overlay.textContent = (data.message || 'No data available') + ' (market may be closed)';
+      drawChart();
+    } else if (!cached) {
+      overlay.textContent = (data.message || 'No data') + ' · market may be closed';
     }
   } catch (e) {
-    overlay.textContent = 'Chart unavailable';
+    if (!cached) overlay.textContent = 'Chart unavailable · check connection';
     console.warn('Chart fetch:', e.message);
   }
-  drawChart();
 }
 
 // ── CHART: CANDLESTICK ────────────────────────────────────────────────────────

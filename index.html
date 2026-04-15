@@ -1512,22 +1512,50 @@ async function fetchCompanyProfile(sym, label) {
     const data = await res.json();
     if (data.extract && data.type !== 'disambiguation') {
       prof.description = data.extract.slice(0, 600);
+      prof.descriptionSource = 'wikipedia';
     }
   } catch(e) { console.log('Wikipedia summary:', e.message); }
 
-  // 3. Extract keywords from industry + description
+  // 3. Company website "About Us" — critical for Indian companies without Wikipedia coverage
+  if (prof.weburl) {
+    try {
+      const webAbout = await fetchWebsiteAbout(prof.weburl);
+      if (webAbout) {
+        if (!prof.description) {
+          // No Wikipedia — use website as primary description
+          prof.description = webAbout.slice(0, 600);
+          prof.descriptionSource = 'website';
+        } else {
+          // Wikipedia exists — store website text separately to enrich keywords
+          prof.websiteAbout = webAbout.slice(0, 400);
+        }
+      }
+    } catch(e) { console.log('Website about:', e.message); }
+  }
+
+  // 4. Extract keywords from industry + description + website about
   const kws = new Set([label.toLowerCase(), prof.name.toLowerCase()]);
   // Industry words
   if (prof.industry) {
     prof.industry.toLowerCase().split(/[\s,&\/]+/).filter(w => w.length > 3).forEach(w => kws.add(w));
   }
-  // Meaningful words from Wikipedia description
+  const STOP = new Set(['that','this','with','from','have','been','were','they','their','which',
+    'about','would','these','other','than','also','into','some','such','when','what','more',
+    'most','very','just','only','over','after','before','between','through','does','based',
+    'under','being','while','where','could','should','there','those','every','during','since',
+    'india','indian','company','limited','private','public','group','global','provides','offers',
+    'products','services','business','operations','established','founded','headquartered']);
+  // Meaningful words from description (Wikipedia or website)
   if (prof.description) {
-    const STOP = new Set(['that','this','with','from','have','been','were','they','their','which',
-      'about','would','these','other','than','also','into','some','such','when','what','more',
-      'most','very','just','only','over','after','before','between','through','does','based',
-      'under','being','while','where','could','should','there','those','every','during','since']);
     prof.description.toLowerCase()
+      .replace(/[^a-z\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 4 && !STOP.has(w))
+      .forEach(w => kws.add(w));
+  }
+  // Additional words from website about (if Wikipedia was also present)
+  if (prof.websiteAbout) {
+    prof.websiteAbout.toLowerCase()
       .replace(/[^a-z\s]/g, ' ')
       .split(/\s+/)
       .filter(w => w.length > 4 && !STOP.has(w))
@@ -1543,14 +1571,102 @@ async function fetchCompanyProfile(sym, label) {
   saveCompanyProfiles();
 }
 
+// Fetch and extract "About Us" text from a company's own website.
+// Tries homepage meta tags first (fast), then common about-us paths.
+async function fetchWebsiteAbout(weburl) {
+  const base = weburl.replace(/\/$/, '');
+
+  // Helper: extract meta description or OG description from raw HTML
+  function extractMeta(html) {
+    const patterns = [
+      /<meta[^>]+name=["']description["'][^>]+content=["']([^"']{50,})["']/i,
+      /<meta[^>]+content=["']([^"']{50,})["'][^>]+name=["']description["']/i,
+      /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']{50,})["']/i,
+      /<meta[^>]+content=["']([^"']{50,})["'][^>]+property=["']og:description["']/i,
+    ];
+    for (const re of patterns) {
+      const m = html.match(re);
+      if (m) return m[1].trim();
+    }
+    return null;
+  }
+
+  // Helper: strip tags and extract meaningful text near "about" sections
+  function extractBodyText(html) {
+    const clean = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+      .replace(/<header[\s\S]*?<\/header>/gi, '')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/\s+/g, ' ').trim();
+
+    const lower = clean.toLowerCase();
+    // Look for about-us anchor points
+    for (const marker of ['about us', 'who we are', 'our company', 'our story', 'about the company']) {
+      const idx = lower.indexOf(marker);
+      if (idx !== -1) return clean.slice(idx, idx + 500).trim();
+    }
+    // Fallback: skip nav/hero area (~15%) and grab a chunk
+    const start = Math.floor(clean.length * 0.15);
+    return clean.slice(start, start + 400).trim();
+  }
+
+  // Step 1: Try homepage — fastest, meta description is usually enough
+  try {
+    const proxied = CORS_PROXY + encodeURIComponent(base);
+    const res = await apiFetch(proxied, 7000);
+    const html = await res.text();
+    const meta = extractMeta(html);
+    if (meta) return meta;
+    // If no meta, try body text from homepage
+    const body = extractBodyText(html);
+    if (body && body.length > 80) return body;
+  } catch(e) { console.log('Website homepage:', e.message); }
+
+  // Step 2: Try common about-us paths
+  const aboutPaths = ['/about-us', '/about', '/company/about', '/who-we-are', '/our-story', '/company'];
+  for (const path of aboutPaths) {
+    try {
+      const proxied = CORS_PROXY + encodeURIComponent(base + path);
+      const res = await apiFetch(proxied, 6000);
+      if (!res.ok) continue;
+      const html = await res.text();
+      const meta = extractMeta(html);
+      if (meta) return meta;
+      const body = extractBodyText(html);
+      if (body && body.length > 80) return body;
+    } catch(e) { /* try next path */ }
+  }
+
+  return null;
+}
+
 // Get all keywords for a company — dynamic profile + SECTOR_MAP fallback
 function getCompanyKeywords(label) {
   const key = label.toUpperCase();
   const kws = new Set();
 
-  // Dynamic profile keywords (from Finnhub + Wikipedia)
+  // Dynamic profile keywords (from Finnhub + Wikipedia + company website)
   const prof = state.companyProfiles[key];
   if (prof?.keywords) prof.keywords.forEach(k => kws.add(k));
+
+  // Additional keywords from website about text (supplements Wikipedia)
+  if (prof?.websiteAbout) {
+    const STOP = new Set(['that','this','with','from','have','been','were','they','their','which',
+      'about','would','these','other','than','also','into','some','such','when','what','more',
+      'most','very','just','only','over','after','before','between','through','does','based',
+      'under','being','while','where','could','should','there','those','every','during','since',
+      'india','indian','company','limited','private','public','group','global','provides','offers',
+      'products','services','business','operations','established','founded','headquartered']);
+    prof.websiteAbout.toLowerCase()
+      .replace(/[^a-z\s]/g, ' ').split(/\s+/)
+      .filter(w => w.length > 4 && !STOP.has(w))
+      .forEach(w => kws.add(w));
+  }
 
   // Static SECTOR_MAP keywords (fallback)
   const sm = typeof SECTOR_MAP !== 'undefined' ? SECTOR_MAP[key] : null;
@@ -1894,9 +2010,14 @@ async function fetchSectorNews(sym, label) {
   const dynProf = state.companyProfiles[label.toUpperCase()];
   if (profile || dynProf) {
     const sectorLabel = dynProf?.industry || profile?.sector || 'EQUITY';
-    const contextText = dynProf?.description
-      ? dynProf.description.slice(0, 100)
-      : profile?.geo ? profile.geo.replace(/['"()]/g, '').replace(/ OR /g, ' · ').slice(0, 80) : '';
+    let contextText = '';
+    if (dynProf?.description) {
+      // Show source badge: [wiki] or [web] so user knows where intel came from
+      const srcBadge = dynProf.descriptionSource === 'website' ? '[web] ' : '[wiki] ';
+      contextText = srcBadge + dynProf.description.slice(0, 95);
+    } else if (profile?.geo) {
+      contextText = profile.geo.replace(/['"()]/g, '').replace(/ OR /g, ' · ').slice(0, 80);
+    }
     document.getElementById('sec-name-label').textContent = '▶ ' + sectorLabel + '  ';
     document.getElementById('sec-geo-label').textContent  = contextText ? '· ' + contextText : '';
     ctx.style.display = 'block';

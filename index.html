@@ -1042,37 +1042,73 @@ function renderAnnouncements() {
     </div>`).join('');
 }
 
-// ── FETCH: CHART DATA (OHLC) ──────────────────────────────────────────────────
+// ── SYMBOL → YAHOO FINANCE FORMAT ────────────────────────────────────────────
+function toYahooSym(sym) {
+  const [base, exch] = sym.split(':');
+  if (!exch) return base;
+  if (exch === 'NSE') return `${base}.NS`;
+  if (exch === 'BSE') return `${base}.BO`;
+  return base; // US stocks (AAPL, MSFT, etc.)
+}
+
+function yahooIR(interval, outputsize) {
+  if (interval === '5min')                    return { yiv: '5m',  yr: '1d'  };
+  if (interval === '1h')                      return { yiv: '60m', yr: '5d'  };
+  if (interval === '1day' && outputsize <= 180) return { yiv: '1d', yr: '6mo' };
+  if (interval === '1day')                    return { yiv: '1d',  yr: '1y'  };
+  if (interval === '1week')                   return { yiv: '1wk', yr: '5y'  };
+  if (interval === '1month')                  return { yiv: '1mo', yr: 'max' };
+  return { yiv: '1d', yr: '1y' };
+}
+
+function tsToDateStr(ts) {
+  // Convert Unix timestamp to "YYYY-MM-DD HH:MM:00" in IST (UTC+5:30)
+  const ist = new Date(ts * 1000 + 5.5 * 3600000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth()+1)}-${pad(ist.getUTCDate())} ${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}:00`;
+}
+
+// ── FETCH: CHART DATA (OHLC via Yahoo Finance) ────────────────────────────────
 async function fetchChartData(symbol, name) {
-  const wrap = document.getElementById('chart-canvas-wrap');
   const overlay = document.getElementById('chart-overlay');
   overlay.style.display = 'block';
   overlay.textContent = 'Loading ' + symbol + '...';
 
   const { interval, outputsize, label: rangeLabel } = state.chartInterval;
+  const ySym = toYahooSym(symbol);
+  const { yiv, yr } = yahooIR(interval, outputsize);
 
   try {
-    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${KEYS.TWELVE}`;
-    const res  = await fetch(url);
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=${yiv}&range=${yr}&includePrePost=false`;
+    const res  = await fetch(`https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`);
     const data = await res.json();
 
-    if (data.values && data.values.length > 0) {
-      state.chart = data.values.slice().reverse().map(v => ({
-        open:     parseFloat(v.open),
-        high:     parseFloat(v.high),
-        low:      parseFloat(v.low),
-        close:    parseFloat(v.close),
-        datetime: v.datetime,
-      }));
-      state.chartSym  = symbol;
-      state.chartName = name || symbol.split(':')[0];
+    const result = data?.chart?.result?.[0];
+    const ts     = result?.timestamp;
+    const q      = result?.indicators?.quote?.[0];
 
-      const sym0 = symbol.split(':')[0];
-      document.getElementById('chart-title').textContent =
-        `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
-      overlay.style.display = 'none';
+    if (ts && q && ts.length > 0) {
+      state.chart = ts.map((t, i) => ({
+        open:     q.open[i],
+        high:     q.high[i],
+        low:      q.low[i],
+        close:    q.close[i],
+        datetime: tsToDateStr(t),
+      })).filter(c => c.open != null && c.close != null);
+
+      if (state.chart.length > 0) {
+        state.chartSym  = symbol;
+        state.chartName = name || symbol.split(':')[0];
+        const sym0 = symbol.split(':')[0];
+        document.getElementById('chart-title').textContent =
+          `${sym0} — ${state.chartName}  |  ${rangeLabel}`;
+        overlay.style.display = 'none';
+      } else {
+        overlay.textContent = 'No data available (market may be closed)';
+      }
     } else {
-      overlay.textContent = (data.message || 'No data available') + ' (market may be closed)';
+      const errMsg = data?.chart?.error?.description || 'No data available';
+      overlay.textContent = errMsg + ' (market may be closed)';
     }
   } catch (e) {
     overlay.textContent = 'Chart unavailable';
